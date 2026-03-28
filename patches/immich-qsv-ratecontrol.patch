@@ -25,7 +25,7 @@ index cd98b39..78a6615 100644
      "transcoding_threads_description": "値を高くするとエンコード速度が速くなりますが、アクティブな間はサーバーが他のタスクを処理する余裕が少なくなります。この値はCPUのコア数を超えないようにする必要があります。\"0\" に設定すると、最大限利用されます。",
      "transcoding_tone_mapping": "トーンマッピング",
 diff --git a/server/src/services/media.service.spec.ts b/server/src/services/media.service.spec.ts
-index 51a10a3..558eeba 100644
+index 51a10a3..ee6b99b 100644
 --- a/server/src/services/media.service.spec.ts
 +++ b/server/src/services/media.service.spec.ts
 @@ -2842,7 +2842,7 @@ describe(MediaService.name, () => {
@@ -37,7 +37,7 @@ index 51a10a3..558eeba 100644
              '-maxrate 10000k',
              '-bufsize 20000k',
            ]),
-@@ -2851,6 +2851,99 @@ describe(MediaService.name, () => {
+@@ -2851,6 +2851,121 @@ describe(MediaService.name, () => {
        );
      });
  
@@ -111,6 +111,28 @@ index 51a10a3..558eeba 100644
 +      );
 +    });
 +
++    it('should reduce qsv look-ahead depth for resolutions above 1080p', async () => {
++      mocks.media.probe.mockResolvedValue(probeStub.videoStream2160p);
++      mocks.systemMetadata.get.mockResolvedValue({
++        ffmpeg: {
++          accel: TranscodeHardwareAcceleration.Qsv,
++          targetVideoCodec: VideoCodec.Av1,
++          maxBitrate: '10000k',
++          temporalAQ: true,
++        },
++      });
++
++      await sut.handleVideoConversion({ id: 'video-id' });
++
++      expect(mocks.media.transcode).toHaveBeenCalledWith(
++        '/original/path.ext',
++        expect.any(String),
++        expect.objectContaining({
++          outputOptions: expect.arrayContaining(['-extbrc 1', '-look_ahead_depth 5']),
++        }),
++      );
++    });
++
 +    it('should not enable qsv look-ahead when qsv quality mode is explicit', async () => {
 +      mocks.media.probe.mockResolvedValue(probeStub.matroskaContainer);
 +      mocks.systemMetadata.get.mockResolvedValue({
@@ -138,7 +160,7 @@ index 51a10a3..558eeba 100644
        mocks.media.probe.mockResolvedValue(probeStub.matroskaContainer);
        mocks.systemMetadata.get.mockResolvedValue({
 diff --git a/server/src/utils/media.ts b/server/src/utils/media.ts
-index ce18530..caa3f42 100644
+index ce18530..437f18f 100644
 --- a/server/src/utils/media.ts
 +++ b/server/src/utils/media.ts
 @@ -683,6 +683,9 @@ export class QsvSwDecodeConfig extends BaseHWConfig {
@@ -146,7 +168,7 @@ index ce18530..caa3f42 100644
        options.push('-low_power 1');
      }
 +    if (this.shouldUseLookAhead()) {
-+      options.push('-extbrc 1', '-look_ahead_depth 30');
++      options.push('-extbrc 1', `-look_ahead_depth ${this.getLookAheadDepth(videoStream)}`);
 +    }
      return options;
    }
@@ -176,7 +198,7 @@ index ce18530..caa3f42 100644
    }
  
    getSupportedCodecs() {
-@@ -736,6 +747,15 @@ export class QsvSwDecodeConfig extends BaseHWConfig {
+@@ -736,6 +747,19 @@ export class QsvSwDecodeConfig extends BaseHWConfig {
      return this.config.cqMode === CQMode.Cqp || this.config.targetVideoCodec === VideoCodec.Vp9;
    }
  
@@ -187,6 +209,10 @@ index ce18530..caa3f42 100644
 +      this.config.cqMode === CQMode.Auto &&
 +      this.getMaxBitrateValue() > 0
 +    );
++  }
++
++  getLookAheadDepth(videoStream: VideoStreamInfo) {
++    return this.getTargetResolution(videoStream) <= 1080 ? 30 : 5;
 +  }
 +
    getScaling(videoStream: VideoStreamInfo): string {

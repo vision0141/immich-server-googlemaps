@@ -1,26 +1,30 @@
 diff --git a/i18n/en.json b/i18n/en.json
-index fdf3a21..c97e268 100644
+index fdf3a21..c3d8f12 100644
 --- a/i18n/en.json
 +++ b/i18n/en.json
-@@ -406,6 +406,8 @@
+@@ -404,8 +404,8 @@
+     "transcoding_settings_description": "Manage which videos to transcode and how to process them",
+     "transcoding_target_resolution": "Target resolution",
      "transcoding_target_resolution_description": "Higher resolutions can preserve more detail but take longer to encode, have larger file sizes, and can reduce app responsiveness.",
-     "transcoding_temporal_aq": "Temporal AQ",
-     "transcoding_temporal_aq_description": "Applies only to NVENC. Temporal Adaptive Quantization increases quality of high-detail, low-motion scenes. May not be compatible with older devices.",
-+    "transcoding_temporal_aq_qsv": "Temporal AQ / QSV Look Ahead",
-+    "transcoding_temporal_aq_qsv_description": "Applies only to NVENC. Temporal Adaptive Quantization increases quality of high-detail, low-motion scenes. May not be compatible with older devices. For QSV AV1, this toggle is also used to enable extbrc/look-ahead.",
+-    "transcoding_temporal_aq": "Temporal AQ",
+-    "transcoding_temporal_aq_description": "Applies only to NVENC. Temporal Adaptive Quantization increases quality of high-detail, low-motion scenes. May not be compatible with older devices.",
++    "transcoding_temporal_aq": "Temporal AQ / QSV Look Ahead",
++    "transcoding_temporal_aq_description": "Applies only to NVENC. Temporal Adaptive Quantization increases quality of high-detail, low-motion scenes. May not be compatible with older devices. For QSV AV1, this toggle is also used to enable extbrc/look-ahead.",
      "transcoding_threads": "Threads",
      "transcoding_threads_description": "Higher values lead to faster encoding, but leave less room for the server to process other tasks while active. This value should not be more than the number of CPU cores. Maximizes utilization if set to 0.",
      "transcoding_tone_mapping": "Tone-mapping",
 diff --git a/i18n/ja.json b/i18n/ja.json
-index cd98b39..78a6615 100644
+index cd98b39..07e3dbc 100644
 --- a/i18n/ja.json
 +++ b/i18n/ja.json
-@@ -406,6 +406,8 @@
+@@ -404,8 +404,8 @@
+     "transcoding_settings_description": "トランスコードする動画とその処理方法を管理します",
+     "transcoding_target_resolution": "解像度",
      "transcoding_target_resolution_description": "解像度を高くすると細かなディテールを保持できますが、エンコードに時間がかかり、ファイルサイズが大きくなり、アプリの応答性が低下する可能性があります。",
-     "transcoding_temporal_aq": "適応的量子化(Temporal AQ)",
-     "transcoding_temporal_aq_description": "NVEncにのみ適用されます。Temporal AQは高精細で動きの少ないシーンの画質を向上させます。古いデバイスとの互換性はありません。",
-+    "transcoding_temporal_aq_qsv": "適応的量子化(Temporal AQ) / QSV Look Ahead",
-+    "transcoding_temporal_aq_qsv_description": "NVEncにのみ適用されます。Temporal AQは高精細で動きの少ないシーンの画質を向上させます。古いデバイスとの互換性はありません。QSV AV1 では extbrc/look-ahead の切り替えにも利用されます。",
+-    "transcoding_temporal_aq": "適応的量子化(Temporal AQ)",
+-    "transcoding_temporal_aq_description": "NVEncにのみ適用されます。Temporal AQは高精細で動きの少ないシーンの画質を向上させます。古いデバイスとの互換性はありません。",
++    "transcoding_temporal_aq": "適応的量子化(Temporal AQ) / QSV Look Ahead",
++    "transcoding_temporal_aq_description": "NVEncにのみ適用されます。Temporal AQは高精細で動きの少ないシーンの画質を向上させます。古いデバイスとの互換性はありません。QSV AV1 では extbrc/look-ahead の切り替えにも利用されます。",
      "transcoding_threads": "スレッド数",
      "transcoding_threads_description": "値を高くするとエンコード速度が速くなりますが、アクティブな間はサーバーが他のタスクを処理する余裕が少なくなります。この値はCPUのコア数を超えないようにする必要があります。\"0\" に設定すると、最大限利用されます。",
      "transcoding_tone_mapping": "トーンマッピング",
@@ -192,19 +196,3 @@ index ce18530..caa3f42 100644
    getScaling(videoStream: VideoStreamInfo): string {
      return super.getScaling(videoStream, 1);
    }
-diff --git a/web/src/lib/components/admin-settings/FFmpegSettings.svelte b/web/src/lib/components/admin-settings/FFmpegSettings.svelte
-index 95aa9d7..2eea0d9 100644
---- a/web/src/lib/components/admin-settings/FFmpegSettings.svelte
-+++ b/web/src/lib/components/admin-settings/FFmpegSettings.svelte
-@@ -336,9 +336,9 @@
-             />
- 
-             <SettingSwitch
--              title={$t('admin.transcoding_temporal_aq')}
-+              title={$t('admin.transcoding_temporal_aq_qsv')}
-               {disabled}
--              subtitle={$t('admin.transcoding_temporal_aq_description')}
-+              subtitle={$t('admin.transcoding_temporal_aq_qsv_description')}
-               bind:checked={configToEdit.ffmpeg.temporalAQ}
-               isEdited={configToEdit.ffmpeg.temporalAQ !== config.ffmpeg.temporalAQ}
-             />

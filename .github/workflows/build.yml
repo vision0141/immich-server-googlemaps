@@ -1,0 +1,136 @@
+name: Build Immich Server Google Maps Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      immich_ref:
+        description: Optional upstream Immich tag or branch
+        required: false
+        type: string
+      force_rebuild:
+        description: Build even if the exact version tag already exists
+        required: false
+        default: false
+        type: boolean
+  schedule:
+    - cron: '17 3 * * *'
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/immich-server-googlemaps
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout patch repository
+        uses: actions/checkout@v4
+
+      - name: Resolve upstream ref
+        id: upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_REF: ${{ inputs.immich_ref }}
+        run: |
+          set -euo pipefail
+          if [ -n "${INPUT_REF:-}" ]; then
+            ref="$INPUT_REF"
+          else
+            ref="$(gh api repos/immich-app/immich/releases/latest --jq .tag_name)"
+          fi
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "Using upstream ref: $ref"
+
+      - name: Clone upstream Immich
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "${{ steps.upstream.outputs.ref }}" https://github.com/immich-app/immich.git upstream
+
+      - name: Resolve upstream commit
+        id: source
+        run: |
+          set -euo pipefail
+          echo "commit=$(git -C upstream rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Apply Google Maps patch
+        run: |
+          set -euo pipefail
+          git -C upstream apply "${GITHUB_WORKSPACE}/patches/immich-googlemaps.patch"
+          git -C upstream diff --stat
+
+      - name: Derive image tags
+        id: tags
+        run: |
+          set -euo pipefail
+          upstream_ref="${{ steps.upstream.outputs.ref }}"
+          version_tag="${upstream_ref}-googlemaps"
+          major_tag="$(printf '%s\n' "$upstream_ref" | sed -E 's/^(v[0-9]+).*/\1/')-googlemaps"
+          echo "version_tag=$version_tag" >> "$GITHUB_OUTPUT"
+          echo "major_tag=$major_tag" >> "$GITHUB_OUTPUT"
+          echo "source_ref=$upstream_ref" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Check whether exact image tag already exists
+        id: exists
+        run: |
+          set -euo pipefail
+          if docker manifest inspect "${IMAGE_NAME}:${{ steps.tags.outputs.version_tag }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Image already exists: ${IMAGE_NAME}:${{ steps.tags.outputs.version_tag }}"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Docker Buildx
+        if: steps.exists.outputs.exists != 'true' || inputs.force_rebuild == true
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata
+        if: steps.exists.outputs.exists != 'true' || inputs.force_rebuild == true
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ steps.tags.outputs.version_tag }}
+            type=raw,value=${{ steps.tags.outputs.major_tag }}
+          labels: |
+            org.opencontainers.image.title=immich-server-googlemaps
+            org.opencontainers.image.description=Immich server image patched to open asset GPS links in Google Maps
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.url=https://github.com/${{ github.repository }}
+            org.opencontainers.image.vendor=vision0141
+
+      - name: Build and push
+        if: steps.exists.outputs.exists != 'true' || inputs.force_rebuild == true
+        uses: docker/build-push-action@v6
+        with:
+          context: ./upstream
+          file: ./upstream/server/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            BUILD_IMAGE=${{ env.IMAGE_NAME }}
+            BUILD_SOURCE_REF=${{ steps.tags.outputs.source_ref }}
+            BUILD_SOURCE_COMMIT=${{ steps.source.outputs.commit }}
+
+      - name: Summary
+        run: |
+          {
+            echo "## Build Result"
+            echo
+            echo "- Upstream ref: \`${{ steps.upstream.outputs.ref }}\`"
+            echo "- Exact tag: \`${IMAGE_NAME}:${{ steps.tags.outputs.version_tag }}\`"
+            echo "- Rolling tag: \`${IMAGE_NAME}:${{ steps.tags.outputs.major_tag }}\`"
+            echo "- Existing image reused: \`${{ steps.exists.outputs.exists }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

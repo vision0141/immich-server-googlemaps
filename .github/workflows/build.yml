@@ -55,10 +55,13 @@ jobs:
           set -euo pipefail
           echo "commit=$(git -C upstream rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Apply Google Maps patch
+      - name: Apply custom patches
         run: |
           set -euo pipefail
-          git -C upstream apply "${GITHUB_WORKSPACE}/patches/immich-googlemaps.patch"
+          for patch in "${GITHUB_WORKSPACE}"/patches/*.patch; do
+            echo "Applying $(basename "$patch")"
+            git -C upstream apply "$patch"
+          done
           git -C upstream diff --stat
 
       - name: Derive image tags

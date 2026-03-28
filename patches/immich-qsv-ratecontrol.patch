@@ -1,0 +1,97 @@
+diff --git a/server/src/services/media.service.spec.ts b/server/src/services/media.service.spec.ts
+index 51a10a3..20a9fdd 100644
+--- a/server/src/services/media.service.spec.ts
++++ b/server/src/services/media.service.spec.ts
+@@ -2842,7 +2842,7 @@ describe(MediaService.name, () => {
+             '-v verbose',
+             '-vf hwupload=extra_hw_frames=64,scale_qsv=-1:720:mode=hq:format=nv12',
+             '-preset 7',
+-            '-global_quality:v 23',
++            '-b:v 6897k',
+             '-maxrate 10000k',
+             '-bufsize 20000k',
+           ]),
+@@ -2851,6 +2851,54 @@ describe(MediaService.name, () => {
+       );
+     });
+ 
++    it('should keep icq quality mode for qsv when max bitrate is enabled', async () => {
++      mocks.media.probe.mockResolvedValue(probeStub.matroskaContainer);
++      mocks.systemMetadata.get.mockResolvedValue({
++        ffmpeg: { accel: TranscodeHardwareAcceleration.Qsv, cqMode: CQMode.Icq, maxBitrate: '10000k' },
++      });
++
++      await sut.handleVideoConversion({ id: 'video-id' });
++
++      expect(mocks.media.transcode).toHaveBeenCalledWith(
++        '/original/path.ext',
++        expect.any(String),
++        expect.objectContaining({
++          outputOptions: expect.arrayContaining(['-global_quality:v 23']),
++        }),
++      );
++      expect(mocks.media.transcode).toHaveBeenCalledWith(
++        '/original/path.ext',
++        expect.any(String),
++        expect.objectContaining({
++          outputOptions: expect.not.arrayContaining(['-b:v 6897k', '-maxrate 10000k', '-bufsize 20000k']),
++        }),
++      );
++    });
++
++    it('should keep cqp mode for qsv when max bitrate is enabled', async () => {
++      mocks.media.probe.mockResolvedValue(probeStub.matroskaContainer);
++      mocks.systemMetadata.get.mockResolvedValue({
++        ffmpeg: { accel: TranscodeHardwareAcceleration.Qsv, cqMode: CQMode.Cqp, maxBitrate: '10000k' },
++      });
++
++      await sut.handleVideoConversion({ id: 'video-id' });
++
++      expect(mocks.media.transcode).toHaveBeenCalledWith(
++        '/original/path.ext',
++        expect.any(String),
++        expect.objectContaining({
++          outputOptions: expect.arrayContaining(['-q:v 23']),
++        }),
++      );
++      expect(mocks.media.transcode).toHaveBeenCalledWith(
++        '/original/path.ext',
++        expect.any(String),
++        expect.objectContaining({
++          outputOptions: expect.not.arrayContaining(['-b:v 6897k', '-maxrate 10000k', '-bufsize 20000k']),
++        }),
++      );
++    });
++
+     it('should set options for qsv with custom dri node', async () => {
+       mocks.media.probe.mockResolvedValue(probeStub.matroskaContainer);
+       mocks.systemMetadata.get.mockResolvedValue({
+diff --git a/server/src/utils/media.ts b/server/src/utils/media.ts
+index ce18530..eabb738 100644
+--- a/server/src/utils/media.ts
++++ b/server/src/utils/media.ts
+@@ -705,12 +705,20 @@ export class QsvSwDecodeConfig extends BaseHWConfig {
+   }
+ 
+   getBitrateOptions() {
+-    const options = [`-${this.useCQP() ? 'q:v' : 'global_quality:v'} ${this.config.crf}`];
+     const bitrates = this.getBitrateDistribution();
+-    if (bitrates.max > 0) {
+-      options.push(`-maxrate ${bitrates.max}${bitrates.unit}`, `-bufsize ${bitrates.max * 2}${bitrates.unit}`);
++
++    // QSV quality-based modes switch away from ICQ/CQP once maxrate is supplied
++    // without also selecting a bitrate mode. Keep explicit ICQ/CQP settings intact,
++    // and only use bitrate mode when CQ mode is left on auto.
++    if (bitrates.max > 0 && this.config.cqMode === CQMode.Auto) {
++      return [
++        `-b:v ${bitrates.target}${bitrates.unit}`,
++        `-maxrate ${bitrates.max}${bitrates.unit}`,
++        `-bufsize ${bitrates.max * 2}${bitrates.unit}`,
++      ];
+     }
+-    return options;
++
++    return [`-${this.useCQP() ? 'q:v' : 'global_quality:v'} ${this.config.crf}`];
+   }
+ 
+   getSupportedCodecs() {

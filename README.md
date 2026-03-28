@@ -8,6 +8,7 @@
 
 - アセット詳細パネルの外部マップリンクを `OpenStreetMap` から `Google Maps` に変更
 - Intel `QSV` のレート制御を調整し、`Auto` と `maxBitrate` の組み合わせで bitrate mode に切り替わるように修正
+- Intel `QSV AV1` では `Temporal AQ` トグルを `extbrc/look-ahead` の切り替えにも利用
 
 upstream への追従をしやすくするため、構成は最小差分にしています。
 
@@ -47,6 +48,7 @@ Watchtower 用の推奨:
 - リンク表示名 -> `Google Maps`
 - QSV の `maxBitrate` 指定時は `Auto` で bitrate mode を使う
 - `ICQ` / `CQP` を明示した場合は quality mode を固定する
+- `QSV AV1 + Auto + maxBitrate + Temporal AQ` の時だけ `-extbrc 1 -look_ahead_depth 30` を追加する
 
 ### Intel QSV 補足
 
@@ -55,8 +57,11 @@ Watchtower 用の推奨:
 - `cqMode = auto` かつ `maxBitrate` なし: `ICQ`
 - `cqMode = auto` かつ `maxBitrate` あり: `VBR`
 - `cqMode = icq` / `cqp`: 指定 mode を優先
+- `Temporal AQ = on` かつ `QSV AV1 + Auto + maxBitrate`: `extbrc/look-ahead` を有効化
 
 実機検証では、`AV1 QSV` の `QVBR` はこの環境では実用にならず、`Auto + maxBitrate` は `VBR` を使う方針にしています。
+
+`look_ahead_depth` は `20 / 30 / 40` を単発比較し、今回の環境では `30` を採用しています。`40` は品質差がほぼなく、並列時の不安定化余地が大きいためです。
 
 また、`QSV` の hardware decode は環境によって不安定な場合があります。rate control patch は encode side の挙動修正であり、hardware decode の安定化 patch ではありません。
 
@@ -98,6 +103,7 @@ Current patches include:
 
 - changing the asset detail panel's external map link from OpenStreetMap to Google Maps
 - adjusting Intel `QSV` rate-control behavior so `Auto + maxBitrate` switches to bitrate mode
+- using the `Temporal AQ` toggle to enable `extbrc/look-ahead` for Intel `QSV AV1`
 
 It is designed to stay close to upstream:
 
@@ -137,6 +143,7 @@ Change:
 - link label -> `Google Maps`
 - use bitrate mode for QSV when `maxBitrate` is set and `cqMode` is `auto`
 - keep explicit `ICQ` / `CQP` selections in quality mode
+- add `-extbrc 1 -look_ahead_depth 30` only for `QSV AV1 + Auto + maxBitrate + Temporal AQ`
 
 ### Intel QSV Notes
 
@@ -145,8 +152,11 @@ This image also includes a rate-control patch for `AV1 QSV`.
 - `cqMode = auto` with no `maxBitrate`: `ICQ`
 - `cqMode = auto` with `maxBitrate`: `VBR`
 - `cqMode = icq` / `cqp`: keep the selected quality mode
+- `Temporal AQ = on` with `QSV AV1 + Auto + maxBitrate`: enable `extbrc/look-ahead`
 
 In local testing, `AV1 QSV` `QVBR` was not usable on this stack, so `Auto + maxBitrate` intentionally uses `VBR`.
+
+`look_ahead_depth` was compared at `20 / 30 / 40` in single-job runs. This patch uses `30`, since `40` showed no meaningful quality gain and had a worse stability margin under parallel load.
 
 Hardware decode for `QSV` may still be unstable depending on the environment. This patch improves encode-side rate control behavior; it does not claim to fix hardware decode stability.
 

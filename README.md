@@ -63,7 +63,7 @@ Watchtower 用の推奨:
 
 実機検証では、`AV1 QSV` の `QVBR` はこの環境では実用にならず、`Auto + maxBitrate` は `VBR` を使う方針にしています。
 
-`look_ahead_depth` は解像度別に切り替えます。現行設定では、`1080p` 系は `20`、`4K` 系は `5` です。`4K` で `10` 以上は `Invalid FrameType:0` で失敗し、`1080p` は `40` まで通る一方で `50` で失敗しましたが、実運用では `30` で失敗例が出たため `20` に下げています。
+`look_ahead_depth` は解像度別に切り替えます。今回の環境では、`1080p` 系は `30`、`4K` 系は `5` が安定域でした。`4K` で `10` 以上は `Invalid FrameType:0` で失敗し、`1080p` は `40` まで通る一方で `50` で失敗しました。
 
 また、`QSV` の hardware decode は環境によって不安定な場合があります。rate control patch は encode side の挙動修正であり、hardware decode の安定化 patch ではありません。
 
@@ -160,7 +160,7 @@ This image also includes a rate-control patch for `AV1 QSV`.
 
 In local testing, `AV1 QSV` `QVBR` was not usable on this stack, so `Auto + maxBitrate` intentionally uses `VBR`.
 
-`look_ahead_depth` now varies by target resolution. The current setting uses `20` for `1080p` and `5` for higher-than-`1080p`. `4K` failed at `10+` with `Invalid FrameType:0`, while `1080p` stayed stable through `40` and failed at `50`, but production failures at `30` made `20` the safer choice.
+`look_ahead_depth` now varies by target resolution. In this environment, `1080p` uses `30` and higher-than-`1080p` uses `5`. `4K` failed at `10+` with `Invalid FrameType:0`, while `1080p` stayed stable through `40` and failed at `50`.
 
 Hardware decode for `QSV` may still be unstable depending on the environment. This patch improves encode-side rate control behavior; it does not claim to fix hardware decode stability.
 

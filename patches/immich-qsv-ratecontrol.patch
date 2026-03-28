@@ -106,7 +106,7 @@ index 51a10a3..ee6b99b 100644
 +        '/original/path.ext',
 +        expect.any(String),
 +        expect.objectContaining({
-+          outputOptions: expect.arrayContaining(['-extbrc 1', '-look_ahead_depth 20']),
++          outputOptions: expect.arrayContaining(['-extbrc 1', '-look_ahead_depth 30']),
 +        }),
 +      );
 +    });
@@ -151,7 +151,7 @@ index 51a10a3..ee6b99b 100644
 +        '/original/path.ext',
 +        expect.any(String),
 +        expect.objectContaining({
-+          outputOptions: expect.not.arrayContaining(['-extbrc 1', '-look_ahead_depth 20']),
++          outputOptions: expect.not.arrayContaining(['-extbrc 1', '-look_ahead_depth 30']),
 +        }),
 +      );
 +    });
@@ -212,7 +212,7 @@ index ce18530..437f18f 100644
 +  }
 +
 +  getLookAheadDepth(videoStream: VideoStreamInfo) {
-+    return this.getTargetResolution(videoStream) <= 1080 ? 20 : 5;
++    return this.getTargetResolution(videoStream) <= 1080 ? 30 : 5;
 +  }
 +
    getScaling(videoStream: VideoStreamInfo): string {

@@ -7,7 +7,7 @@ index 75f9e75..b160e26 100644
              <p class="font-bold">{lat.toPrecision(6)}, {lon.toPrecision(6)}</p>
              <a
 -              href="https://www.openstreetmap.org/?mlat={lat}&mlon={lon}&zoom=13#map=15/{lat}/{lon}"
-+              href="https://www.google.com/maps/search/?api=1&query={lat},{lon}"
++              href="https://www.google.com/maps/place/{lat},{lon}/@{lat},{lon},120m"
                target="_blank"
                class="font-medium text-primary underline focus:outline-none"
              >

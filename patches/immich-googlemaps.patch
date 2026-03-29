@@ -1,8 +1,8 @@
 diff --git a/web/src/lib/components/asset-viewer/detail-panel.svelte b/web/src/lib/components/asset-viewer/detail-panel.svelte
-index 75f9e75..4bf6b3d 100644
+index e80d376..9a0ebbe 100644
 --- a/web/src/lib/components/asset-viewer/detail-panel.svelte
 +++ b/web/src/lib/components/asset-viewer/detail-panel.svelte
-@@ -108,6 +108,25 @@
+@@ -132,6 +132,26 @@
  
    const toggleAssetPath = () => (showAssetPath = !showAssetPath);
  
@@ -29,7 +29,7 @@ index 75f9e75..4bf6b3d 100644
    const handleChangeDate = async () => {
      if (!isOwner) {
        return;
-@@ -499,10 +518,10 @@
+@@ -500,11 +520,11 @@
            <div class="flex flex-col items-center gap-1">
              <p class="font-bold">{lat.toPrecision(6)}, {lon.toPrecision(6)}</p>
              <a

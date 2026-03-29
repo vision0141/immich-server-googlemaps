@@ -22,7 +22,7 @@ index 75f9e75..4bf6b3d 100644
 +    const lonDms = getDmsComponent(lon, 'E', 'W');
 +    const place = encodeURIComponent(`${latDms} ${lonDms}`);
 +
-+    return `https://www.google.com/maps/place/${place}/@${lat},${lon},120m`;
++    return `https://www.google.com/maps/place/${place}/@${lat},${lon},450m`;
 +  };
 +
    const handleChangeDate = async () => {

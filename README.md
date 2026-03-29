@@ -7,7 +7,7 @@
 現在含まれる主な修正:
 
 - アセット詳細パネルの外部マップリンクを `OpenStreetMap` から `Google Maps` に変更
-  表示は `place/{DMS}/@{lat},{lon},450m` 形式で、地点周辺を見やすい距離から開く
+  表示は `place/{DMS}/@{lat},{lon},450m/data=...` 形式で、共有リンクに近い見え方を優先
 - Intel `QSV` のレート制御を調整し、`Auto` と `maxBitrate` の組み合わせで bitrate mode に切り替わるように修正
 
 upstream への追従をしやすくするため、構成は最小差分にしています。
@@ -44,7 +44,7 @@ Watchtower 用の推奨:
 
 変更内容:
 
-- OpenStreetMap URL -> Google Maps URL (`place/{DMS}/@{lat},{lon},450m`)
+- OpenStreetMap URL -> Google Maps shared-style URL (`place/{DMS}/@{lat},{lon},450m/data=!3m1!1e3!...`)
 - リンク表示名 -> `Google Maps`
 - QSV の `maxBitrate` 指定時は `Auto` で bitrate mode を使う
 - `ICQ` / `CQP` を明示した場合は quality mode を固定する
@@ -98,7 +98,7 @@ This repository builds a custom `immich-server` image with a small set of patche
 Current patches include:
 
 - changing the asset detail panel's external map link from OpenStreetMap to Google Maps
-  using a `place/{DMS}/@{lat},{lon},450m` style URL for a closer initial view
+  using a shared-style `place/{DMS}/@{lat},{lon},450m/data=!3m1!1e3!...` URL for a more stable map view
 - adjusting Intel `QSV` rate-control behavior so `Auto + maxBitrate` switches to bitrate mode
 
 It is designed to stay close to upstream:
@@ -135,7 +135,7 @@ Upstream file:
 
 Change:
 
-- OpenStreetMap URL -> Google Maps URL (`place/{DMS}/@{lat},{lon},450m`)
+- OpenStreetMap URL -> Google Maps shared-style URL (`place/{DMS}/@{lat},{lon},450m/data=!3m1!1e3!...`)
 - link label -> `Google Maps`
 - use bitrate mode for QSV when `maxBitrate` is set and `cqMode` is `auto`
 - keep explicit `ICQ` / `CQP` selections in quality mode

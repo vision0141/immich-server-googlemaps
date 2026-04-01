@@ -1,0 +1,38 @@
+diff --git a/server/src/services/media.service.spec.ts b/server/src/services/media.service.spec.ts
+index 51a10a3..2c6e567 100644
+--- a/server/src/services/media.service.spec.ts
++++ b/server/src/services/media.service.spec.ts
+@@ -2087,7 +2087,7 @@ describe(MediaService.name, () => {
+       );
+     });
+ 
+-    it('should scale vertically when video is vertical', async () => {
++    it('should scale portrait videos by stored frame orientation when rotation metadata is present', async () => {
+       mocks.media.probe.mockResolvedValue(probeStub.videoStreamVertical2160p);
+       mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { transcode: TranscodePolicy.Optimal } });
+       await sut.handleVideoConversion({ id: 'video-id' });
+@@ -2096,7 +2096,7 @@ describe(MediaService.name, () => {
+         expect.any(String),
+         expect.objectContaining({
+           inputOptions: expect.any(Array),
+-          outputOptions: expect.arrayContaining([expect.stringMatching(/scale(_.+)?=720:-2/)]),
++          outputOptions: expect.arrayContaining([expect.stringMatching(/scale(_.+)?=-2:720/)]),
+           twoPass: false,
+         }),
+       );
+diff --git a/server/src/utils/media.ts b/server/src/utils/media.ts
+index ce18530..db05cd1 100644
+--- a/server/src/utils/media.ts
++++ b/server/src/utils/media.ts
+@@ -268,7 +268,10 @@ export class BaseConfig implements VideoCodecSWConfig {
+   }
+ 
+   isVideoVertical(videoStream: VideoStreamInfo) {
+-    return videoStream.height > videoStream.width || this.isVideoRotated(videoStream);
++    // Transcoding keeps `-noautorotate`, so scaling must follow the stored frame
++    // orientation. Rotated portrait videos are encoded as landscape frames plus
++    // rotation metadata; treating them as already-vertical produces squashed output.
++    return videoStream.height > videoStream.width;
+   }
+ 
+   isBitrateConstrained() {

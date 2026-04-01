@@ -9,6 +9,7 @@
 - アセット詳細パネルの外部マップリンクを `OpenStreetMap` から `Google Maps` に変更
   表示は `place/{DMS}/@{lat},{lon},450m/data=...` 形式で、共有リンクに近い見え方を優先
 - Intel `QSV` のレート制御を調整し、`Auto` と `maxBitrate` の組み合わせで bitrate mode に切り替わるように修正
+- 回転メタデータ付きの縦動画が `608x1080` のように潰れないよう、transcode 時の scaling 判定を修正
 
 upstream への追従をしやすくするため、構成は最小差分にしています。
 
@@ -48,6 +49,7 @@ Watchtower 用の推奨:
 - リンク表示名 -> `Google Maps`
 - QSV の `maxBitrate` 指定時は `Auto` で bitrate mode を使う
 - `ICQ` / `CQP` を明示した場合は quality mode を固定する
+- 回転 metadata を保持したまま transcode する縦動画で、stored orientation に合わせて scaling する
 
 ### Intel QSV 補足
 
@@ -100,6 +102,7 @@ Current patches include:
 - changing the asset detail panel's external map link from OpenStreetMap to Google Maps
   using a shared-style `place/{DMS}/@{lat},{lon},450m/data=!3m1!1e3!...` URL for a more stable map view
 - adjusting Intel `QSV` rate-control behavior so `Auto + maxBitrate` switches to bitrate mode
+- fixing portrait videos with rotation metadata so transcoding no longer produces squashed `608x1080`-style output
 
 It is designed to stay close to upstream:
 
@@ -139,6 +142,7 @@ Change:
 - link label -> `Google Maps`
 - use bitrate mode for QSV when `maxBitrate` is set and `cqMode` is `auto`
 - keep explicit `ICQ` / `CQP` selections in quality mode
+- scale rotated portrait videos using stored frame orientation during transcode
 
 ### Intel QSV Notes
 

@@ -1,6 +1,9 @@
 name: Build Immich Server Google Maps Image
 
 on:
+  release:
+    types:
+      - published
   workflow_dispatch:
     inputs:
       immich_ref:
@@ -34,10 +37,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           INPUT_REF: ${{ inputs.immich_ref }}
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
           if [ -n "${INPUT_REF:-}" ]; then
             ref="$INPUT_REF"
+          elif [ "${EVENT_NAME:-}" = "release" ] && [ -n "${RELEASE_TAG:-}" ]; then
+            ref="$RELEASE_TAG"
           else
             ref="$(gh api repos/immich-app/immich/releases/latest --jq .tag_name)"
           fi

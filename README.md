@@ -68,7 +68,7 @@ Watchtower 用の推奨:
 workflow の実行方法:
 
 - `workflow_dispatch` による手動実行
-- `schedule` による毎日実行
+- `schedule` による毎時実行
 
 動作内容:
 
@@ -161,7 +161,7 @@ Hardware decode for `QSV` may still be unstable depending on the environment. Th
 The workflow runs:
 
 - manually via `workflow_dispatch`
-- daily via `schedule`
+- hourly via `schedule`
 
 Behavior:
 

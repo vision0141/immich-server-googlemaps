@@ -10,6 +10,7 @@
   表示は `place/{DMS}/@{lat},{lon},450m/data=...` 形式で、共有リンクに近い見え方を優先
 - Intel `QSV` のレート制御を調整し、`Auto` と `maxBitrate` の組み合わせで bitrate mode に切り替わるように修正
 - 回転メタデータ付きの縦動画が `608x1080` のように潰れないよう、transcode 時の scaling 判定を修正
+- 画像設定のプレビュー解像度に `Original` を追加し、画像・動画プレビューを元解像度で生成できるように修正
 
 upstream への追従をしやすくするため、構成は最小差分にしています。
 
@@ -40,13 +41,18 @@ Watchtower 用の推奨:
 変更対象 upstream file:
 
 - `web/src/lib/components/asset-viewer/detail-panel.svelte`
+- `web/src/lib/components/admin-settings/ImageSettings.svelte`
+- `server/src/dtos/system-config.dto.ts`
+- `server/src/services/media.service.ts`
 - `server/src/utils/media.ts`
+- `server/src/controllers/system-config.controller.spec.ts`
 - `server/src/services/media.service.spec.ts`
 
 変更内容:
 
 - OpenStreetMap URL -> Google Maps shared-style URL (`place/{DMS}/@{lat},{lon},450m/data=!3m1!1e3!...`)
 - リンク表示名 -> `Google Maps`
+- プレビュー解像度の `Original` 選択肢を `0` として保存し、画像では resize 無効、動画では既存の `original` target resolution として扱う
 - QSV の `maxBitrate` 指定時は `Auto` で bitrate mode を使う
 - `ICQ` / `CQP` を明示した場合は quality mode を固定する
 - 回転 metadata を保持したまま transcode する縦動画で、stored orientation に合わせて scaling する
@@ -103,6 +109,7 @@ Current patches include:
   using a shared-style `place/{DMS}/@{lat},{lon},450m/data=!3m1!1e3!...` URL for a more stable map view
 - adjusting Intel `QSV` rate-control behavior so `Auto + maxBitrate` switches to bitrate mode
 - fixing portrait videos with rotation metadata so transcoding no longer produces squashed `608x1080`-style output
+- adding an `Original` preview-resolution option for image settings so image and video previews can be generated at source resolution
 
 It is designed to stay close to upstream:
 
@@ -133,13 +140,18 @@ Recommended for Watchtower:
 Upstream file:
 
 - `web/src/lib/components/asset-viewer/detail-panel.svelte`
+- `web/src/lib/components/admin-settings/ImageSettings.svelte`
+- `server/src/dtos/system-config.dto.ts`
+- `server/src/services/media.service.ts`
 - `server/src/utils/media.ts`
+- `server/src/controllers/system-config.controller.spec.ts`
 - `server/src/services/media.service.spec.ts`
 
 Change:
 
 - OpenStreetMap URL -> Google Maps shared-style URL (`place/{DMS}/@{lat},{lon},450m/data=!3m1!1e3!...`)
 - link label -> `Google Maps`
+- store the `Original` preview-resolution selection as `0`, disable image resizing for it, and pass video preview generation through the existing `original` target resolution
 - use bitrate mode for QSV when `maxBitrate` is set and `cqMode` is `auto`
 - keep explicit `ICQ` / `CQP` selections in quality mode
 - scale rotated portrait videos using stored frame orientation during transcode

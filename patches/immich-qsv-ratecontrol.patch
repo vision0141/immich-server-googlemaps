@@ -1,7 +1,15 @@
 diff --git a/server/src/services/media.service.spec.ts b/server/src/services/media.service.spec.ts
-index 51a10a3..20a9fdd 100644
+index 51a10a3..3d62ad4 100644
 --- a/server/src/services/media.service.spec.ts
 +++ b/server/src/services/media.service.spec.ts
+@@ -10,6 +10,7 @@ import {
+   AssetVisibility,
+   AudioCodec,
+   Colorspace,
++  CQMode,
+   ExifOrientation,
+   ImageFormat,
+   JobName,
 @@ -2842,7 +2842,7 @@ describe(MediaService.name, () => {
              '-v verbose',
              '-vf hwupload=extra_hw_frames=64,scale_qsv=-1:720:mode=hq:format=nv12',

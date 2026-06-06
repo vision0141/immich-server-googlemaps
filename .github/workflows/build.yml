@@ -113,7 +113,7 @@ jobs:
             type=raw,value=${{ steps.tags.outputs.major_tag }}
           labels: |
             org.opencontainers.image.title=immich-server-googlemaps
-            org.opencontainers.image.description=Immich server image patched to open asset GPS links in Google Maps
+            org.opencontainers.image.description=Immich server image with Google Maps, media encoding, and preview-resolution patches
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.url=https://github.com/${{ github.repository }}
             org.opencontainers.image.vendor=vision0141

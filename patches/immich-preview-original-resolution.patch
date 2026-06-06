@@ -1,0 +1,208 @@
+diff --git a/server/src/controllers/system-config.controller.spec.ts b/server/src/controllers/system-config.controller.spec.ts
+index bbd1241..6546cc7 100644
+--- a/server/src/controllers/system-config.controller.spec.ts
++++ b/server/src/controllers/system-config.controller.spec.ts
+@@ -90,6 +90,13 @@ describe(SystemConfigController.name, () => {
+         expect(status).toBe(200);
+       });
+ 
++      it('should accept original resolution for previews', async () => {
++        const config = _.cloneDeep(defaults);
++        config.image.preview.size = 0;
++        const { status } = await request(ctx.getHttpServer()).put('/system-config').send(config);
++        expect(status).toBe(200);
++      });
++
+       it('should reject invalid progressive value', async () => {
+         const config = _.cloneDeep(defaults);
+         (config.image.thumbnail.progressive as any) = 'invalid';
+diff --git a/server/src/dtos/system-config.dto.ts b/server/src/dtos/system-config.dto.ts
+index a214dbc..f1634a6 100644
+--- a/server/src/dtos/system-config.dto.ts
++++ b/server/src/dtos/system-config.dto.ts
+@@ -644,6 +644,27 @@ class SystemConfigGeneratedImageDto {
+   progressive?: boolean;
+ }
+ 
++class SystemConfigGeneratedPreviewImageDto {
++  @ValidateEnum({ enum: ImageFormat, name: 'ImageFormat', description: 'Image format' })
++  format!: ImageFormat;
++
++  @IsInt()
++  @Min(1)
++  @Max(100)
++  @Type(() => Number)
++  @ApiProperty({ type: 'integer', description: 'Quality' })
++  quality!: number;
++
++  @IsInt()
++  @Min(0)
++  @Type(() => Number)
++  @ApiProperty({ type: 'integer', description: 'Size' })
++  size!: number;
++
++  @ValidateBoolean({ optional: true, default: false })
++  progressive?: boolean;
++}
++
+ class SystemConfigGeneratedFullsizeImageDto {
+   @ValidateBoolean({ description: 'Enabled' })
+   enabled!: boolean;
+@@ -670,12 +691,12 @@ export class SystemConfigImageDto {
+   @ApiProperty({ description: undefined })
+   thumbnail!: SystemConfigGeneratedImageDto;
+ 
+-  @Type(() => SystemConfigGeneratedImageDto)
++  @Type(() => SystemConfigGeneratedPreviewImageDto)
+   @ValidateNested()
+   @IsObject()
+   // Description lives on schema to avoid duplication
+   @ApiProperty({ description: undefined })
+-  preview!: SystemConfigGeneratedImageDto;
++  preview!: SystemConfigGeneratedPreviewImageDto;
+ 
+   @Type(() => SystemConfigGeneratedFullsizeImageDto)
+   @ValidateNested()
+diff --git a/server/src/services/media.service.spec.ts b/server/src/services/media.service.spec.ts
+index 51a10a3..4e75780 100644
+--- a/server/src/services/media.service.spec.ts
++++ b/server/src/services/media.service.spec.ts
+@@ -535,6 +535,22 @@ describe(MediaService.name, () => {
+       ]);
+     });
+ 
++    it('should generate an original resolution preview for a video when preview size is zero', async () => {
++      const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/path.ext' }).exif().build();
++      mocks.media.probe.mockResolvedValue(probeStub.videoStream2160p);
++      mocks.systemMetadata.get.mockResolvedValue({ image: { preview: { size: 0 } } });
++      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
++      await sut.handleGenerateThumbnails({ id: asset.id });
++
++      expect(mocks.media.transcode).toHaveBeenCalledWith(
++        '/original/path.ext',
++        expect.any(String),
++        expect.objectContaining({
++          outputOptions: expect.not.arrayContaining([expect.stringContaining('scale=')]),
++        }),
++      );
++    });
++
+     it('should tonemap thumbnail for hdr video', async () => {
+       const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/path.ext' }).exif().build();
+       mocks.media.probe.mockResolvedValue(probeStub.videoStreamHDR);
+@@ -709,6 +725,28 @@ describe(MediaService.name, () => {
+       );
+     });
+ 
++    it('should generate an original resolution image preview when preview size is zero', async () => {
++      const asset = AssetFactory.from().exif().build();
++      mocks.systemMetadata.get.mockResolvedValue({ image: { preview: { size: 0 } } });
++      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
++
++      await sut.handleGenerateThumbnails({ id: asset.id });
++
++      expect(mocks.media.decodeImage).toHaveBeenCalledWith(asset.originalPath, {
++        colorspace: Colorspace.Srgb,
++        processInvalidImages: false,
++        size: undefined,
++      });
++      expect(mocks.media.generateThumbnail).toHaveBeenCalledWith(
++        rawBuffer,
++        expect.objectContaining({
++          format: ImageFormat.Jpeg,
++          size: undefined,
++        }),
++        expect.stringContaining('_preview.jpeg'),
++      );
++    });
++
+     it.each(Object.values(ImageFormat))('should generate an image thumbnail in %s format', async (format) => {
+       const asset = AssetFactory.from().exif().build();
+       mocks.systemMetadata.get.mockResolvedValue({ image: { thumbnail: { format } } });
+diff --git a/server/src/services/media.service.ts b/server/src/services/media.service.ts
+index 2c9325c..1904eae 100644
+--- a/server/src/services/media.service.ts
++++ b/server/src/services/media.service.ts
+@@ -57,6 +57,8 @@ interface UpsertFileOptions {
+ 
+ type ThumbnailAsset = NonNullable<Awaited<ReturnType<AssetJobRepository['getForGenerateThumbnailJob']>>>;
+ 
++const ORIGINAL_IMAGE_PREVIEW_SIZE = 0;
++
+ @Injectable()
+ export class MediaService extends BaseService {
+   videoInterfaces: VideoInterfaces = { dri: [], mali: false };
+@@ -258,6 +260,14 @@ export class MediaService extends BaseService {
+     return extracted;
+   }
+ 
++  private getImagePreviewTargetSize(size: number) {
++    return size === ORIGINAL_IMAGE_PREVIEW_SIZE ? undefined : size;
++  }
++
++  private getImagePreviewTargetResolution(size: number) {
++    return size === ORIGINAL_IMAGE_PREVIEW_SIZE ? 'original' : size.toString();
++  }
++
+   private async decodeImage(thumbSource: string | Buffer, exifInfo: ThumbnailAsset['exifInfo'], targetSize?: number) {
+     const { image } = await this.getConfig({ withCache: true });
+     const colorspace = this.isSRGB(exifInfo) ? Colorspace.Srgb : image.colorspace;
+@@ -273,8 +283,9 @@ export class MediaService extends BaseService {
+   }
+ 
+   private async extractOriginalImage(asset: ThumbnailAsset, image: SystemConfig['image'], useEdits = false) {
+-    const extractEmbedded = image.extractEmbedded && mimeTypes.isRaw(asset.originalFileName);
+-    const extracted = extractEmbedded ? await this.extractImage(asset.originalPath, image.preview.size) : null;
++    const previewSize = this.getImagePreviewTargetSize(image.preview.size);
++    const extractEmbedded = image.extractEmbedded && previewSize !== undefined && mimeTypes.isRaw(asset.originalFileName);
++    const extracted = extractEmbedded ? await this.extractImage(asset.originalPath, previewSize) : null;
+     const generateFullsize =
+       ((image.fullsize.enabled || asset.exifInfo.projectionType === 'EQUIRECTANGULAR') &&
+         !mimeTypes.isWebSupportedImage(asset.originalPath)) ||
+@@ -287,7 +298,7 @@ export class MediaService extends BaseService {
+       // only specify orientation to extracted images which don't have EXIF orientation data
+       // or it can double rotate the image
+       extracted ? asset.exifInfo : { ...asset.exifInfo, orientation: null },
+-      convertFullsize ? undefined : image.preview.size,
++      convertFullsize ? undefined : previewSize,
+     );
+ 
+     let isTransparent = false;
+@@ -336,7 +347,12 @@ export class MediaService extends BaseService {
+     // generate final images
+     const baseOptions = { colorspace, processInvalidImages: false, raw: info, edits: useEdits ? asset.edits : [] };
+     const thumbnailOptions = { ...image.thumbnail, ...baseOptions, format: thumbnailFormat };
+-    const previewOptions = { ...image.preview, ...baseOptions, format: previewFormat };
++    const previewOptions = {
++      ...image.preview,
++      ...baseOptions,
++      format: previewFormat,
++      size: this.getImagePreviewTargetSize(image.preview.size),
++    };
+     const promises = [
+       this.mediaRepository.generateThumbhash(data, baseOptions),
+       this.mediaRepository.generateThumbnail(data, thumbnailOptions, thumbnailFile.path),
+@@ -533,7 +549,10 @@ export class MediaService extends BaseService {
+     }
+     const mainAudioStream = this.getMainStream(audioStreams);
+ 
+-    const previewConfig = ThumbnailConfig.create({ ...ffmpeg, targetResolution: image.preview.size.toString() });
++    const previewConfig = ThumbnailConfig.create({
++      ...ffmpeg,
++      targetResolution: this.getImagePreviewTargetResolution(image.preview.size),
++    });
+     const thumbnailConfig = ThumbnailConfig.create({ ...ffmpeg, targetResolution: image.thumbnail.size.toString() });
+     const previewOptions = previewConfig.getCommand(TranscodeTarget.Video, mainVideoStream, mainAudioStream, format);
+     const thumbnailOptions = thumbnailConfig.getCommand(
+diff --git a/web/src/lib/components/admin-settings/ImageSettings.svelte b/web/src/lib/components/admin-settings/ImageSettings.svelte
+index e1f4ec5..8d05204 100644
+--- a/web/src/lib/components/admin-settings/ImageSettings.svelte
++++ b/web/src/lib/components/admin-settings/ImageSettings.svelte
+@@ -109,6 +109,7 @@
+             number
+             bind:value={configToEdit.image.preview.size}
+             options={[
++              { value: 0, text: $t('original') },
+               { value: 2160, text: '4K' },
+               { value: 1440, text: '1440p' },
+               { value: 1080, text: '1080p' },

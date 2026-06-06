@@ -1,0 +1,42 @@
+diff --git a/server/src/repositories/asset-job.repository.ts b/server/src/repositories/asset-job.repository.ts
+index 3765cad..bd2b33d 100644
+--- a/server/src/repositories/asset-job.repository.ts
++++ b/server/src/repositories/asset-job.repository.ts
+@@ -89,7 +89,7 @@ export class AssetJobRepository {
+               conditions.push(
+                 and([
+                   not(exists(file(AssetFileType.FullSize))),
+-                  eb(sql`f_unaccent(asset."originalFileName")`, 'like', sql`any(array[${isWebUnsupported}]::text[])`),
++                  eb(sql`lower(f_unaccent(asset."originalFileName"))`, 'like', sql`any(array[${isWebUnsupported}]::text[])`),
+                 ]),
+               );
+             }
+diff --git a/server/test/medium/specs/repositories/asset-job.repository.spec.ts b/server/test/medium/specs/repositories/asset-job.repository.spec.ts
+index 023ed87..19bfc68 100644
+--- a/server/test/medium/specs/repositories/asset-job.repository.spec.ts
++++ b/server/test/medium/specs/repositories/asset-job.repository.spec.ts
+@@ -82,6 +82,24 @@ describe(AssetJobRepository.name, () => {
+       );
+     });
+ 
++    it('should queue assets with a missing full size when the unsupported extension is uppercase', async () => {
++      const { ctx, sut } = setup();
++      const { user } = await ctx.newUser();
++      const { asset } = await ctx.newAsset({
++        ownerId: user.id,
++        thumbhash: Buffer.from('fake-thumbhash-buffer'),
++        originalFileName: 'IMG_3593.HEIC',
++      });
++      await ctx.newJobStatus({ assetId: asset.id, metadataExtractedAt: new Date() });
++      await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Thumbnail, path: 'thumbnail.jpg' });
++      await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, path: 'preview.jpg' });
++
++      const stream = sut.streamForThumbnailJob({ force: false, fullsizeEnabled: true });
++      await expect(consume(stream)).resolves.toEqual(
++        expect.arrayContaining([expect.objectContaining({ id: asset.id })]),
++      );
++    });
++
+     it('should skip assets with after they have full size previews', async () => {
+       const { ctx, sut } = setup();
+       const { user } = await ctx.newUser();

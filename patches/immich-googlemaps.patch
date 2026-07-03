@@ -1,10 +1,10 @@
-diff --git a/web/src/lib/components/asset-viewer/detail-panel.svelte b/web/src/lib/components/asset-viewer/detail-panel.svelte
-index e80d376..9a0ebbe 100644
---- a/web/src/lib/components/asset-viewer/detail-panel.svelte
-+++ b/web/src/lib/components/asset-viewer/detail-panel.svelte
-@@ -132,6 +132,26 @@
+diff --git a/web/src/lib/components/asset-viewer/DetailPanel.svelte b/web/src/lib/components/asset-viewer/DetailPanel.svelte
+index 8b00d82..b20ef9f 100644
+--- a/web/src/lib/components/asset-viewer/DetailPanel.svelte
++++ b/web/src/lib/components/asset-viewer/DetailPanel.svelte
+@@ -65,6 +65,26 @@
  
-   const toggleAssetPath = () => (showAssetPath = !showAssetPath);
+   let albums = $derived(refreshAlbums());
  
 +  const getDmsComponent = (value: number, positive: string, negative: string) => {
 +    const absolute = Math.abs(value);
@@ -26,20 +26,19 @@ index e80d376..9a0ebbe 100644
 +    return `https://www.google.com/maps/place/${place}/@${lat},${lon},450m/data=${data}`;
 +  };
 +
-   const handleChangeDate = async () => {
-     if (!isOwner) {
-       return;
-@@ -500,11 +520,11 @@
-           <div class="flex flex-col items-center gap-1">
-             <p class="font-bold">{lat.toPrecision(6)}, {lon.toPrecision(6)}</p>
-             <a
--              href="https://www.openstreetmap.org/?mlat={lat}&mlon={lon}&zoom=13#map=15/{lat}/{lon}"
-+              href={getGoogleMapsHref(lat, lon)}
-               target="_blank"
-               class="font-medium text-primary underline focus:outline-none"
-             >
--              {$t('open_in_openstreetmap')}
-+              Google Maps
-             </a>
-           </div>
-         {/snippet}
+   $effect(() => {
+     if (!previousId) {
+       previousId = asset.id;
+@@ -312,10 +332,10 @@
+             <div class="flex flex-col items-center gap-1">
+               <Text fontWeight="bold">{lat.toPrecision(6)}, {lon.toPrecision(6)}</Text>
+               <Link
+-                href="https://www.openstreetmap.org/?mlat={lat}&mlon={lon}&zoom=13#map=15/{lat}/{lon}"
++                href={getGoogleMapsHref(lat, lon)}
+                 class="text-primary"
+               >
+-                {$t('open_in_openstreetmap')}
++                Google Maps
+               </Link>
+             </div>
+           {/snippet}

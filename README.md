@@ -12,7 +12,9 @@
 - 回転メタデータ付きの縦動画が `608x1080` のように潰れないよう、transcode 時の scaling 判定を修正
 - 画像設定のプレビュー解像度に `Original` を追加し、画像・動画プレビューを元解像度で生成できるように修正
 - Web非対応画像の `fullsize` 生成で、`IMG_3593.HEIC` のような大文字拡張子も通常ジョブで拾えるように修正
-- WebUI の写真ビューアで元画像ロード後の表示が低解像度レイヤーのまま残らないように修正
+- WebUI の写真ビューアで元画像ロード後に低解像度レイヤーが残る問題は、v3 upstream 側の新しい `AdaptiveImage` 実装で解消済みのため、旧reraster patchは外しています
+
+`v3.0.1` 公式ソース確認時点では、上記のうち旧reraster patch以外は upstream に取り込まれていないため、このカスタムビルドで維持します。
 
 upstream への追従をしやすくするため、構成は最小差分にしています。
 
@@ -30,29 +32,24 @@ workflow は次の tag を push します。
 
 例:
 
-- `ghcr.io/vision0141/immich-server-googlemaps:v2.6.3-googlemaps`
-- `ghcr.io/vision0141/immich-server-googlemaps:v2-googlemaps`
+- `ghcr.io/vision0141/immich-server-googlemaps:v3.0.1-googlemaps`
+- `ghcr.io/vision0141/immich-server-googlemaps:v3-googlemaps`
 
 Watchtower 用の推奨:
 
-- 自動追従したい場合は `v2-googlemaps`
+- 自動追従したい場合は `v3-googlemaps`
 - 手動で更新管理したい場合は `vX.Y.Z-googlemaps`
 
 ### patch 内容
 
 変更対象 upstream file:
 
-- `web/src/lib/components/asset-viewer/detail-panel.svelte`
-- `web/src/lib/components/admin-settings/ImageSettings.svelte`
+- `web/src/lib/components/asset-viewer/DetailPanel.svelte`
+- `web/src/routes/admin/system-settings/ImageSettings.svelte`
 - `server/src/dtos/system-config.dto.ts`
 - `server/src/services/media.service.ts`
 - `server/src/repositories/asset-job.repository.ts`
 - `server/src/utils/media.ts`
-- `server/src/controllers/system-config.controller.spec.ts`
-- `server/src/services/media.service.spec.ts`
-- `server/test/medium/specs/repositories/asset-job.repository.spec.ts`
-- `web/src/lib/actions/zoom-image.ts`
-- `web/src/lib/components/AdaptiveImage.svelte`
 
 変更内容:
 
@@ -63,7 +60,7 @@ Watchtower 用の推奨:
 - QSV の `maxBitrate` 指定時は `Auto` で bitrate mode を使う
 - `ICQ` / `CQP` を明示した場合は quality mode を固定する
 - 回転 metadata を保持したまま transcode する縦動画で、stored orientation に合わせて scaling する
-- 写真ビューアのズーム対象に `will-change: transform` を付けず、元画像ロード後も低解像度ラスタが表示され続けるのを防ぐ
+- 旧写真ビューアreraster patchはv3では不要なため適用しない
 
 ### Intel QSV 補足
 
@@ -86,7 +83,8 @@ workflow の実行方法:
 
 動作内容:
 
-- 最新の upstream Immich release tag を取得
+- 定期実行では GitHub API の `releases/latest` から最新のstable release tagを取得
+- RC / prerelease は定期実行では拾わず、手動実行時に `immich_ref` へ `v3.0.0-rc.4` のようなtagを指定した場合だけビルド
 - その version の image が GHCR に既にあれば build を skip
 - 新しい upstream version が出ていれば exact tag と rolling tag を build/push
 
@@ -97,7 +95,7 @@ Immich の compose では `immich-server` の image だけ差し替えます。
 ```yaml
 services:
   immich-server:
-    image: ghcr.io/vision0141/immich-server-googlemaps:v2-googlemaps
+    image: ghcr.io/vision0141/immich-server-googlemaps:v3-googlemaps
 ```
 
 `immich-machine-learning` や database 関連の container はそのままで構いません。
@@ -119,7 +117,9 @@ Current patches include:
 - fixing portrait videos with rotation metadata so transcoding no longer produces squashed `608x1080`-style output
 - adding an `Original` preview-resolution option for image settings so image and video previews can be generated at source resolution
 - making fullsize thumbnail jobs pick up web-unsupported images with uppercase filename extensions such as `IMG_3593.HEIC`
-- preventing the WebUI photo viewer from keeping a low-resolution raster layer after the original image has loaded
+- the former WebUI photo-viewer reraster workaround is no longer applied because the v3 upstream `AdaptiveImage` implementation already addresses the stale low-resolution layer behavior
+
+As of the `v3.0.1` upstream source check, only the old reraster workaround is covered upstream. The other items are still kept in this custom build.
 
 It is designed to stay close to upstream:
 
@@ -137,29 +137,24 @@ The workflow publishes these tags:
 
 Examples:
 
-- `ghcr.io/vision0141/immich-server-googlemaps:v2.6.3-googlemaps`
-- `ghcr.io/vision0141/immich-server-googlemaps:v2-googlemaps`
+- `ghcr.io/vision0141/immich-server-googlemaps:v3.0.1-googlemaps`
+- `ghcr.io/vision0141/immich-server-googlemaps:v3-googlemaps`
 
 Recommended for Watchtower:
 
-- use `v2-googlemaps` for automatic major-version tracking
+- use `v3-googlemaps` for automatic major-version tracking
 - pin to `vX.Y.Z-googlemaps` if you want manual upgrades
 
 ### What is patched
 
 Upstream file:
 
-- `web/src/lib/components/asset-viewer/detail-panel.svelte`
-- `web/src/lib/components/admin-settings/ImageSettings.svelte`
+- `web/src/lib/components/asset-viewer/DetailPanel.svelte`
+- `web/src/routes/admin/system-settings/ImageSettings.svelte`
 - `server/src/dtos/system-config.dto.ts`
 - `server/src/services/media.service.ts`
 - `server/src/repositories/asset-job.repository.ts`
 - `server/src/utils/media.ts`
-- `server/src/controllers/system-config.controller.spec.ts`
-- `server/src/services/media.service.spec.ts`
-- `server/test/medium/specs/repositories/asset-job.repository.spec.ts`
-- `web/src/lib/actions/zoom-image.ts`
-- `web/src/lib/components/AdaptiveImage.svelte`
 
 Change:
 
@@ -170,7 +165,7 @@ Change:
 - use bitrate mode for QSV when `maxBitrate` is set and `cqMode` is `auto`
 - keep explicit `ICQ` / `CQP` selections in quality mode
 - scale rotated portrait videos using stored frame orientation during transcode
-- avoid applying `will-change: transform` to the photo-viewer zoom target so the browser does not keep showing a low-resolution raster layer after the original image loads
+- the old photo-viewer reraster patch is not applied on v3 because it is no longer needed
 
 ### Intel QSV Notes
 
@@ -193,7 +188,8 @@ The workflow runs:
 
 Behavior:
 
-- resolve the latest upstream Immich release tag
+- scheduled runs resolve the latest stable upstream release tag via GitHub's `releases/latest`
+- RC / prerelease tags are not picked up automatically; build them only by passing a tag such as `v3.0.0-rc.4` to `immich_ref` in `workflow_dispatch`
 - skip the build if that exact version tag already exists in GHCR
 - build and push exact + rolling tags when a new upstream version appears
 
@@ -204,7 +200,7 @@ Replace only the server image in your Immich compose file:
 ```yaml
 services:
   immich-server:
-    image: ghcr.io/vision0141/immich-server-googlemaps:v2-googlemaps
+    image: ghcr.io/vision0141/immich-server-googlemaps:v3-googlemaps
 ```
 
 Leave `immich-machine-learning` and the database containers unchanged.

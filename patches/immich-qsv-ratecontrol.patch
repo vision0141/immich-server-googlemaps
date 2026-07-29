@@ -2,11 +2,11 @@ diff --git a/server/src/utils/media.ts b/server/src/utils/media.ts
 index eb775e2..d6f2555 100644
 --- a/server/src/utils/media.ts
 +++ b/server/src/utils/media.ts
-@@ -785,18 +785,22 @@ export class QsvSwDecodeConfig extends BaseHWConfig {
+@@ -815,18 +815,22 @@ export class QsvSwDecodeConfig extends BaseHWConfig {
    }
  
    getBitrateOptions() {
--    const options = [`-${this.useCQP() ? 'q:v' : 'global_quality:v'}`, `${this.config.crf}`];
+-    const options = [`-${this.useCQP() ? 'q:v' : 'global_quality:v'}`, String(this.config.crf)];
      const bitrates = this.getBitrateDistribution();
 -    if (bitrates.max > 0) {
 -      // Workaround for https://github.com/immich-app/immich/issues/29220, to be revisited
@@ -31,7 +31,54 @@ index eb775e2..d6f2555 100644
 +      ];
      }
 -    return options;
-+    return [`-${this.useCQP() ? 'q:v' : 'global_quality:v'}`, `${this.config.crf}`];
++    return [`-${this.useCQP() ? 'q:v' : 'global_quality:v'}`, String(this.config.crf)];
    }
  
    // recommended from https://github.com/intel/media-delivery/blob/master/doc/benchmarks/intel-iris-xe-max-graphics/intel-iris-xe-max-graphics.md
+diff --git a/server/src/services/media.service.spec.ts b/server/src/services/media.service.spec.ts
+index 2a9ca11..15ee934 100644
+--- a/server/src/services/media.service.spec.ts
++++ b/server/src/services/media.service.spec.ts
+@@ -11,6 +11,7 @@ import {
+   AssetVisibility,
+   AudioCodec,
+   Colorspace,
++  CQMode,
+   ExifOrientation,
+   ImageFormat,
+   JobName,
+@@ -2984,8 +2985,6 @@ describe(MediaService.name, () => {
+             'hwupload=extra_hw_frames=64,scale_qsv=-1:720:mode=hq:format=nv12',
+             '-preset',
+             '7',
+-            '-global_quality:v',
+-            '23',
+             '-b:v',
+             '6897k',
+             '-maxrate',
+@@ -2996,6 +2995,24 @@ describe(MediaService.name, () => {
+           twoPass: false,
+         }),
+       );
++      expect(mocks.media.transcode.mock.calls[0][2].outputOptions).not.toContain('-global_quality:v');
+     });
+-
++
++    it('should preserve qsv icq mode when max bitrate is set', async () => {
++      mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...asset, ...probeStub.matroskaContainer });
++      mocks.systemMetadata.get.mockResolvedValue({
++        ffmpeg: {
++          accel: TranscodeHardwareAcceleration.Qsv,
++          maxBitrate: '10000k',
++          accelDecode: false,
++          cqMode: CQMode.Icq,
++        },
++      });
++      await sut.handleVideoConversion({ id: 'video-id' });
++
++      const outputOptions = mocks.media.transcode.mock.calls[0][2].outputOptions;
++      expect(outputOptions).toEqual(expect.arrayContaining(['-global_quality:v', '23']));
++      expect(outputOptions).not.toEqual(expect.arrayContaining(['-b:v', '-maxrate']));
++    });
++
+     it('should set options for qsv with custom dri node with sw decode', async () => {

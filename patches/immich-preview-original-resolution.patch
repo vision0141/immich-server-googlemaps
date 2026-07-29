@@ -50,28 +50,29 @@ index 4d6857c6c..9961bb79d 100644
    private async decodeImage(thumbSource: string | Buffer, exifInfo: ThumbnailAsset['exifInfo'], targetSize?: number) {
      const { image } = await this.getConfig({ withCache: true });
      const colorspace = this.isSRGB(exifInfo) ? Colorspace.Srgb : image.colorspace;
-@@ -273,8 +283,9 @@ export class MediaService extends BaseService {
+@@ -277,8 +287,10 @@ export class MediaService extends BaseService {
    }
  
    private async extractOriginalImage(asset: ThumbnailAsset, image: SystemConfig['image'], useEdits = false) {
--    const extractEmbedded = image.extractEmbedded && mimeTypes.isRaw(asset.originalFileName);
--    const extracted = extractEmbedded ? await this.extractImage(asset.originalPath, image.preview.size) : null;
+-    const isExtractEmbedded = image.extractEmbedded && mimeTypes.isRaw(asset.originalFileName);
+-    const extracted = isExtractEmbedded ? await this.extractImage(asset.originalPath, image.preview.size) : null;
 +    const previewSize = this.getImagePreviewTargetSize(image.preview.size);
-+    const extractEmbedded = image.extractEmbedded && previewSize !== undefined && mimeTypes.isRaw(asset.originalFileName);
-+    const extracted = extractEmbedded ? await this.extractImage(asset.originalPath, previewSize) : null;
-     const generateFullsize =
++    const isExtractEmbedded =
++      image.extractEmbedded && previewSize !== undefined && mimeTypes.isRaw(asset.originalFileName);
++    const extracted = isExtractEmbedded ? await this.extractImage(asset.originalPath, previewSize) : null;
+     const isGenerateFullsize =
        ((image.fullsize.enabled || asset.exifInfo.projectionType === 'EQUIRECTANGULAR') &&
          !mimeTypes.isWebSupportedImage(asset.originalPath)) ||
-@@ -287,7 +298,7 @@ export class MediaService extends BaseService {
+@@ -291,7 +303,7 @@ export class MediaService extends BaseService {
        // only specify orientation to extracted images which don't have EXIF orientation data
        // or it can double rotate the image
        extracted ? asset.exifInfo : { ...asset.exifInfo, orientation: null },
--      convertFullsize ? undefined : image.preview.size,
-+      convertFullsize ? undefined : previewSize,
+-      isConvertFullsize ? undefined : image.preview.size,
++      isConvertFullsize ? undefined : previewSize,
      );
  
      let isTransparent = false;
-@@ -336,7 +347,12 @@ export class MediaService extends BaseService {
+@@ -336,7 +348,12 @@ export class MediaService extends BaseService {
      // generate final images
      const baseOptions = { colorspace, processInvalidImages: false, raw: info, edits: useEdits ? asset.edits : [] };
      const thumbnailOptions = { ...image.thumbnail, ...baseOptions, format: thumbnailFormat };
@@ -85,7 +86,7 @@ index 4d6857c6c..9961bb79d 100644
      const promises = [
        this.mediaRepository.generateThumbhash(data, baseOptions),
        this.mediaRepository.generateThumbnail(data, thumbnailOptions, thumbnailFile.path),
-@@ -529,7 +545,10 @@ export class MediaService extends BaseService {
+@@ -529,7 +546,10 @@ export class MediaService extends BaseService {
        throw new Error(`Missing video metadata for asset ${asset.id}`);
      }
  
@@ -109,3 +110,35 @@ index 66b8c3733..d78f23b60 100644
                { value: 2160, text: '4K' },
                { value: 1440, text: '1440p' },
                { value: 1080, text: '1080p' },
+diff --git a/server/src/services/media.service.spec.ts b/server/src/services/media.service.spec.ts
+index 290bf94..2a9ca11 100644
+--- a/server/src/services/media.service.spec.ts
++++ b/server/src/services/media.service.spec.ts
+@@ -926,4 +926,26 @@ describe(MediaService.name, () => {
+       });
+     });
+-
++
++    it('should use the original RAW image when preview size is original', async () => {
++      const asset = AssetFactory.from({ originalFileName: 'file.dng' })
++        .exif({ fileSizeInByte: 5000, profileDescription: 'Adobe RGB', bitsPerSample: 14, orientation: undefined })
++        .build();
++      mocks.systemMetadata.get.mockResolvedValue({ image: { extractEmbedded: true, preview: { size: 0 } } });
++      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
++
++      await sut.handleGenerateThumbnails({ id: asset.id });
++
++      expect(mocks.media.extract).not.toHaveBeenCalled();
++      expect(mocks.media.decodeImage).toHaveBeenCalledWith(asset.originalPath, {
++        colorspace: Colorspace.P3,
++        processInvalidImages: false,
++        size: undefined,
++      });
++      expect(mocks.media.generateThumbnail).toHaveBeenCalledWith(
++        rawBuffer,
++        expect.objectContaining({ size: undefined }),
++        expect.any(String),
++      );
++    });
++
+     it('should not check transparency metadata for raw files without extracted images', async () => {

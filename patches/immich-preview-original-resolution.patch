@@ -1,27 +1,18 @@
-diff --git a/server/src/dtos/system-config.dto.ts b/server/src/dtos/system-config.dto.ts
-index f3f8acf6c..d9d2a8a2b 100644
---- a/server/src/dtos/system-config.dto.ts
-+++ b/server/src/dtos/system-config.dto.ts
-@@ -345,6 +345,10 @@ const SystemConfigGeneratedImageSchema = z
-   })
-   .meta({ id: 'SystemConfigGeneratedImageDto' });
- 
-+const SystemConfigGeneratedPreviewImageSchema = SystemConfigGeneratedImageSchema.extend({
-+  size: z.int().min(0).describe('Size'),
-+}).meta({ id: 'SystemConfigGeneratedPreviewImageDto' });
-+
- const SystemConfigGeneratedFullsizeImageSchema = z
-   .object({
-     enabled: configBool.describe('Enabled'),
-@@ -359,7 +363,7 @@ const SystemConfigGeneratedFullsizeImageSchema = z
- const SystemConfigImageSchema = z
-   .object({
-     thumbnail: SystemConfigGeneratedImageSchema,
--    preview: SystemConfigGeneratedImageSchema,
-+    preview: SystemConfigGeneratedPreviewImageSchema,
-     fullsize: SystemConfigGeneratedFullsizeImageSchema,
-     colorspace: ColorspaceSchema,
-     extractEmbedded: configBool.describe('Extract embedded'),
+diff --git a/server/src/dtos/config.dto.ts b/server/src/dtos/config.dto.ts
+index 8fbdd63..231ca3c 100644
+--- a/server/src/dtos/config.dto.ts
++++ b/server/src/dtos/config.dto.ts
+@@ -335,7 +335,9 @@ const AdminConfigSchemaWithVisibility = z
+     image: z
+       .object({
+         thumbnail: AdminConfigGeneratedImageSchema,
+-        preview: AdminConfigGeneratedImageSchema,
++        preview: AdminConfigGeneratedImageSchema.extend({
++          size: z.int().min(0).describe('Size'),
++        }).meta({ id: 'AdminConfigGeneratedPreviewImageDto' }),
+         fullsize: z
+           .object({
+             enabled: configBool.describe('Enabled').meta({ visibility: User }),
 diff --git a/server/src/services/media.service.ts b/server/src/services/media.service.ts
 index 4d6857c6c..9961bb79d 100644
 --- a/server/src/services/media.service.ts
@@ -142,3 +133,29 @@ index 290bf94..2a9ca11 100644
 +    });
 +
      it('should not check transparency metadata for raw files without extracted images', async () => {
+diff --git a/server/src/dtos/config.dto.spec.ts b/server/src/dtos/config.dto.spec.ts
+index ce4f5a5..22cf657 100644
+--- a/server/src/dtos/config.dto.spec.ts
++++ b/server/src/dtos/config.dto.spec.ts
+@@ -66,3 +66,21 @@ describe('config visibility', () => {
+     }
+   });
+ });
++
++
++describe('original image preview resolution', () => {
++  it.each([0, 1080])('should accept preview size %s', (size) => {
++    const config = { ...defaults, image: { ...defaults.image, preview: { ...defaults.image.preview, size } } };
++    expect(AdminConfigDto.schema.safeParse(config).success).toBe(true);
++  });
++
++  it('should reject a negative preview size', () => {
++    const config = { ...defaults, image: { ...defaults.image, preview: { ...defaults.image.preview, size: -1 } } };
++    expect(AdminConfigDto.schema.safeParse(config).success).toBe(false);
++  });
++
++  it('should still reject zero thumbnail size', () => {
++    const config = { ...defaults, image: { ...defaults.image, thumbnail: { ...defaults.image.thumbnail, size: 0 } } };
++    expect(AdminConfigDto.schema.safeParse(config).success).toBe(false);
++  });
++});

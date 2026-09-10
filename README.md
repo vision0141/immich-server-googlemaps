@@ -46,7 +46,7 @@ Watchtower 用の推奨:
 
 - `web/src/lib/components/asset-viewer/DetailPanel.svelte`
 - `web/src/routes/admin/system-settings/ImageSettings.svelte`
-- `server/src/dtos/system-config.dto.ts`
+- `server/src/dtos/config.dto.ts`
 - `server/src/services/media.service.ts`
 - `server/src/repositories/asset-job.repository.ts`
 - `server/src/utils/media.ts`
@@ -151,7 +151,7 @@ Upstream file:
 
 - `web/src/lib/components/asset-viewer/DetailPanel.svelte`
 - `web/src/routes/admin/system-settings/ImageSettings.svelte`
-- `server/src/dtos/system-config.dto.ts`
+- `server/src/dtos/config.dto.ts`
 - `server/src/services/media.service.ts`
 - `server/src/repositories/asset-job.repository.ts`
 - `server/src/utils/media.ts`
@@ -209,3 +209,7 @@ Leave `immich-machine-learning` and the database containers unchanged.
 
 - The first GHCR package push may create the package as private depending on GitHub package settings.
 - If you want Watchtower to pull without registry credentials, set the GHCR package visibility to public after the first push.
+
+### v3.2.0 互換性
+
+v3.2.0 で設定 DTO が `config.dto.ts` の `AdminConfig` schema に統合されたため、Original preview の入力検証パッチを移植しました。preview のみ 0 を許可し、thumbnail の正数制約は維持します。設定 schema の回帰テストもパッチに含めています。

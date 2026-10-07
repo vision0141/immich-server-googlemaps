@@ -9,12 +9,12 @@
 - アセット詳細パネルの外部マップリンクを `OpenStreetMap` から `Google Maps` に変更
   表示は `place/{DMS}/@{lat},{lon},450m/data=...` 形式で、共有リンクに近い見え方を優先
 - Intel `QSV` のレート制御を調整し、`Auto` と `maxBitrate` の組み合わせで bitrate mode に切り替わるように修正
-- 回転メタデータ付きの縦動画が `608x1080` のように潰れないよう、transcode 時の scaling 判定を修正
 - 画像設定のプレビュー解像度に `Original` を追加し、画像・動画プレビューを元解像度で生成できるように修正
 - Web非対応画像の `fullsize` 生成で、`IMG_3593.HEIC` のような大文字拡張子も通常ジョブで拾えるように修正
 - WebUI の写真ビューアで元画像ロード後に低解像度レイヤーが残る問題は、v3 upstream 側の新しい `AdaptiveImage` 実装で解消済みのため、旧reraster patchは外しています
+- 回転メタデータ付きの縦動画が `608x1080` のように潰れる問題は、v3.3.0 upstream の `isFrameVertical` 修正で解消済みのため、旧rotated portrait scaling patchは外しています
 
-`v3.0.1` 公式ソース確認時点では、上記のうち旧reraster patch以外は upstream に取り込まれていないため、このカスタムビルドで維持します。
+`v3.3.0` 公式ソース確認時点では、上記のうち外したpatch以外は upstream に取り込まれていないため、このカスタムビルドで維持します。
 
 upstream への追従をしやすくするため、構成は最小差分にしています。
 
@@ -59,8 +59,8 @@ Watchtower 用の推奨:
 - `fullsize` 未生成のWeb非対応画像を抽出するとき、`originalFileName` の拡張子判定をcase-insensitiveにする
 - QSV の `maxBitrate` 指定時は `Auto` で bitrate mode を使う
 - `ICQ` / `CQP` を明示した場合は quality mode を固定する
-- 回転 metadata を保持したまま transcode する縦動画で、stored orientation に合わせて scaling する
 - 旧写真ビューアreraster patchはv3では不要なため適用しない
+- 旧rotated portrait scaling patchはv3.3.0以降のupstream修正で不要なため適用しない
 
 ### Intel QSV 補足
 
@@ -114,12 +114,12 @@ Current patches include:
 - changing the asset detail panel's external map link from OpenStreetMap to Google Maps
   using a shared-style `place/{DMS}/@{lat},{lon},450m/data=!3m1!1e3!...` URL for a more stable map view
 - adjusting Intel `QSV` rate-control behavior so `Auto + maxBitrate` switches to bitrate mode
-- fixing portrait videos with rotation metadata so transcoding no longer produces squashed `608x1080`-style output
 - adding an `Original` preview-resolution option for image settings so image and video previews can be generated at source resolution
 - making fullsize thumbnail jobs pick up web-unsupported images with uppercase filename extensions such as `IMG_3593.HEIC`
 - the former WebUI photo-viewer reraster workaround is no longer applied because the v3 upstream `AdaptiveImage` implementation already addresses the stale low-resolution layer behavior
+- the former rotated portrait scaling patch is no longer applied because upstream v3.3.0 fixed it with `isFrameVertical`
 
-As of the `v3.0.1` upstream source check, only the old reraster workaround is covered upstream. The other items are still kept in this custom build.
+As of the `v3.3.0` upstream source check, only the removed patches are covered upstream. The other items are still kept in this custom build.
 
 It is designed to stay close to upstream:
 
@@ -164,8 +164,8 @@ Change:
 - make the missing-`fullsize` web-unsupported image filter case-insensitive for `originalFileName` extension matching
 - use bitrate mode for QSV when `maxBitrate` is set and `cqMode` is `auto`
 - keep explicit `ICQ` / `CQP` selections in quality mode
-- scale rotated portrait videos using stored frame orientation during transcode
 - the old photo-viewer reraster patch is not applied on v3 because it is no longer needed
+- the old rotated portrait scaling patch is not applied on v3.3.0 or later because upstream fixed it
 
 ### Intel QSV Notes
 

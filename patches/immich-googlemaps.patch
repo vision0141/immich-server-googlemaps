@@ -7,11 +7,11 @@ index 8b00d82..b20ef9f 100644
    let albums = $derived(refreshAlbums());
  
 +  const getDmsComponent = (value: number, positive: string, negative: string) => {
-+    const absolute = Math.abs(value);
-+    const degrees = Math.floor(absolute);
-+    const minutesFloat = (absolute - degrees) * 60;
-+    const minutes = Math.floor(minutesFloat);
-+    const seconds = ((minutesFloat - minutes) * 60).toFixed(1);
++    const tenthsOfSecond = Math.round(Math.abs(value) * 36_000);
++    const degrees = Math.floor(tenthsOfSecond / 36_000);
++    const minutes = Math.floor((tenthsOfSecond % 36_000) / 600);
++    const seconds = ((tenthsOfSecond % 600) / 10).toFixed(1);
++
 +    const direction = value >= 0 ? positive : negative;
 +
 +    return `${degrees}°${minutes}'${seconds}"${direction}`;

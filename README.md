@@ -8,6 +8,8 @@
 
 - アセット詳細パネルの外部マップリンクを `OpenStreetMap` から `Google Maps` に変更
   表示は `place/{DMS}/@{lat},{lon},450m/data=...` 形式で、共有リンクに近い見え方を優先。DMSは0.1秒単位に丸めてから度、分、秒へ分け、秒が `60.0` にならないようにする
+- 地図の背景をGoogleの地図(Maps JavaScript API)にする。Googleが使えない時は管理画面の地図スタイル(MapTiler)のまま
+  地図を1枚作る前に同じoriginの `/prism-maps/google-load` を呼び、`{ ok, key }` を受け取る(自宅環境ではCaddyがImmichのログインを確かめてPrism Chatへ中継し、Prism Chatの地図と合わせて月9,900回で断る)。断られた時、この入口が無い時、キーの拒否(`gm_authFailure`)、読込みの失敗では、MapTilerのスタイルにする。作った地図はページの中で使い回し、課金の回数を増やさない
 - Intel `QSV` のレート制御を調整し、`Auto` と `maxBitrate` の組み合わせで bitrate mode に切り替わるように修正
 - 画像設定のプレビュー解像度に `Original` を追加し、画像・動画プレビューを元解像度で生成できるように修正
 - Web非対応画像の `fullsize` 生成で、`IMG_3593.HEIC` のような大文字拡張子も通常ジョブで拾えるように修正
@@ -45,6 +47,8 @@ Watchtower 用の推奨:
 変更対象 upstream file:
 
 - `web/src/lib/components/asset-viewer/DetailPanel.svelte`
+- `web/src/lib/components/shared-components/map/Map.svelte`
+- `web/src/lib/utils/google-basemap.ts`(新規)
 - `web/src/routes/admin/system-settings/ImageSettings.svelte`
 - `server/src/dtos/config.dto.ts`
 - `server/src/services/media.service.ts`
@@ -52,6 +56,8 @@ Watchtower 用の推奨:
 - `server/src/utils/media.ts`
 
 変更内容:
+
+- Googleの地図を使う間は、MapLibreを空のスタイルにして写真の印だけを描き、下に敷いたGoogleの地図(`hybrid`)を位置と拡大(MapLibre+1段)に合わせる。回転、傾き、地球儀は止め、Googleのロゴと著作の表示は隠さない(MapLibreの縮尺は上へずらし、下端のリンクは押された位置で代わりに押す)
 
 - OpenStreetMap URL -> Google Maps shared-style URL (`place/{DMS}/@{lat},{lon},450m/data=!3m1!1e3!...`)
 - リンク表示名 -> `Google Maps`
@@ -113,6 +119,7 @@ Current patches include:
 
 - changing the asset detail panel's external map link from OpenStreetMap to Google Maps
   using a shared-style `place/{DMS}/@{lat},{lon},450m/data=!3m1!1e3!...` URL for a more stable map view
+- using Google Maps (Maps JavaScript API) as the map basemap when same-origin `POST /prism-maps/google-load` returns `{ ok: true, key }`; otherwise (limit reached, endpoint missing, `gm_authFailure`, load error) the configured MapLibre style (MapTiler) is used. Created Google maps are reused within the page to keep billable map loads low
 - adjusting Intel `QSV` rate-control behavior so `Auto + maxBitrate` switches to bitrate mode
 - adding an `Original` preview-resolution option for image settings so image and video previews can be generated at source resolution
 - making fullsize thumbnail jobs pick up web-unsupported images with uppercase filename extensions such as `IMG_3593.HEIC`
@@ -150,6 +157,8 @@ Recommended for Watchtower:
 Upstream file:
 
 - `web/src/lib/components/asset-viewer/DetailPanel.svelte`
+- `web/src/lib/components/shared-components/map/Map.svelte`
+- `web/src/lib/utils/google-basemap.ts` (new)
 - `web/src/routes/admin/system-settings/ImageSettings.svelte`
 - `server/src/dtos/config.dto.ts`
 - `server/src/services/media.service.ts`
@@ -157,6 +166,8 @@ Upstream file:
 - `server/src/utils/media.ts`
 
 Change:
+
+- while Google Maps is active, MapLibre uses an empty style and only draws the photo markers; the Google map (`hybrid`) underneath follows MapLibre's center and zoom (+1). Rotation, pitch and globe are disabled, and the Google logo and attribution stay visible
 
 - OpenStreetMap URL -> Google Maps shared-style URL (`place/{DMS}/@{lat},{lon},450m/data=!3m1!1e3!...`)
 - link label -> `Google Maps`

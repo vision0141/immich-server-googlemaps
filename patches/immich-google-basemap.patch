@@ -1,0 +1,280 @@
+diff --git a/web/src/lib/components/shared-components/map/Map.svelte b/web/src/lib/components/shared-components/map/Map.svelte
+index a3fda21..380523a 100644
+--- a/web/src/lib/components/shared-components/map/Map.svelte
++++ b/web/src/lib/components/shared-components/map/Map.svelte
+@@ -16,6 +16,13 @@
+   import MapSettingsModal from '$lib/modals/MapSettingsModal.svelte';
+   import { mapSettings } from '$lib/stores/preferences.store';
+   import { getAssetMediaUrl, handlePromiseError } from '$lib/utils';
++  import {
++    acquireGoogleBasemap,
++    isGoogleBasemapDown,
++    onGoogleBasemapFail,
++    releaseGoogleBasemap,
++    type GoogleBasemap,
++  } from '$lib/utils/google-basemap';
+   import { getMapMarkers, type MapMarkerResponseDto } from '@immich/sdk';
+   import { Alert, Container, Icon, modalManager, Text, Theme, themeManager } from '@immich/ui';
+   import { mdiCog, mdiImageMultiple, mdiMap, mdiMapMarker } from '@mdi/js';
+@@ -110,6 +117,15 @@
+   let marker: Marker | null = null;
+   let abortController: AbortController;
+ 
++  // 背景をGoogleの地図にするか。決まるまでスタイルを読まない(MapTilerが一瞬出て数えられないように)。
++  // Googleの間はMapLibreを空のスタイルにして写真の印だけを描き、下に敷いたGoogleの地図をMapLibreの位置と拡大に合わせる
++  // 初期位置は管理画面の地図スタイル(MapTilerの独自スタイル)と同じにする。MapLibreは位置の指定が無い地図をスタイルの位置で開く
++  const EMPTY_STYLE = { version: 8 as const, center: [139.803, 35.615], zoom: 8, sources: {}, layers: [] };
++  let googleState: 'pending' | 'on' | 'off' = $state(isGoogleBasemapDown() ? 'off' : 'pending');
++  let google: GoogleBasemap | undefined;
++  let globeControl: GlobeControl | undefined;
++  let destroyed = false;
++
+   const mapTheme = $derived($mapSettings.allowDarkMode ? themeManager.value : Theme.Light);
+   const styleUrl = $derived(
+     mapTheme === Theme.Dark ? serverConfigManager.value.mapDarkStyleUrl : serverConfigManager.value.mapLightStyleUrl,
+@@ -296,10 +312,92 @@
+ 
+   onDestroy(() => {
+     abortController?.abort();
++    destroyed = true;
++    stopGoogle();
++  });
++
++  // MapLibreの拡大段は512pxの画像が基準で、Googleより1段小さい
++  const syncGoogle = () => {
++    if (map && google) {
++      const { lng, lat } = map.getCenter();
++      google.map.moveCamera({ center: { lat, lng }, zoom: map.getZoom() + 1 });
++    }
++  };
++
++  // Googleの地図の下端のロゴと規約のリンクはMapLibreの描画の下にあるため、押された位置にあれば代わりに押す
++  const forwardGoogleClick = (event: MouseEvent) => {
++    const target =
++      google &&
++      document.elementsFromPoint(event.clientX, event.clientY).find((element) => google?.div.contains(element));
++    const link = target?.closest<HTMLElement>('a, button');
++    if (link) {
++      event.stopPropagation();
++      link.click();
++    }
++  };
++
++  const startGoogle = async (map: Map) => {
++    const basemap = await acquireGoogleBasemap(map.getContainer());
++    if (!basemap || destroyed || isGoogleBasemapDown()) {
++      if (basemap) {
++        releaseGoogleBasemap(basemap);
++      }
++      googleState = 'off';
++      return;
++    }
++    google = basemap;
++    // Googleの地図は回転、傾き、地球儀にできないため止める
++    if (globeControl) {
++      map.removeControl(globeControl);
++      globeControl = undefined;
++    }
++    map.dragRotate.disable();
++    map.touchZoomRotate.disableRotation();
++    map.keyboard.disableRotation();
++    map.setMaxPitch(0);
++    map.setBearing(0);
++    map.on('move', syncGoogle);
++    map.on('resize', syncGoogle);
++    map.getContainer().addEventListener('click', forwardGoogleClick, { capture: true });
++    map.getContainer().classList.add('immich-google-on');
++    syncGoogle();
++    googleState = 'on';
++  };
++
++  function stopGoogle() {
++    if (!google) {
++      return;
++    }
++    if (map) {
++      map.off('move', syncGoogle);
++      map.off('resize', syncGoogle);
++      map.getContainer().removeEventListener('click', forwardGoogleClick, { capture: true });
++      map.getContainer().classList.remove('immich-google-on');
++    }
++    releaseGoogleBasemap(google);
++    google = undefined;
++  }
++
++  // キーが拒否されたら、このページの地図はMapTilerに戻す
++  onDestroy(
++    onGoogleBasemapFail(() => {
++      stopGoogle();
++      googleState = 'off';
++    }),
++  );
++
++  $effect(() => {
++    if (map && googleState === 'pending') {
++      const current = map;
++      untrack(() => handlePromiseError(startGoogle(current)));
++    }
+   });
+ 
+   $effect(() => {
+-    map?.setStyle(styleUrl, {
++    if (googleState === 'pending') {
++      return;
++    }
++    map?.setStyle(googleState === 'on' ? EMPTY_STYLE : styleUrl, {
+       transformStyle: (previousStyle, nextStyle) => {
+         if (previousStyle) {
+           // Preserves the custom map markers from the previous style when the theme is switched
+@@ -384,8 +482,9 @@
+       event.setMaxZoom(18);
+       event.on('click', handleMapClick);
+       event.on('moveend', handleMoveEnd);
+-      if (!simplified) {
+-        event.addControl(new GlobeControl(), 'top-left');
++      if (!simplified && googleState !== 'on') {
++        globeControl = new GlobeControl();
++        event.addControl(globeControl, 'top-left');
+       }
+     }}
+     bind:map
+@@ -406,7 +505,9 @@
+             </Control>
+           {/if}
+           <ScaleControl />
+-          <AttributionControl compact={false} />
++          {#if googleState !== 'on'}
++            <AttributionControl compact={false} />
++          {/if}
+         {/if}
+       {/if}
+ 
+@@ -493,3 +594,16 @@
+     </Container>
+   {/snippet}
+ </svelte:boundary>
++
++<style>
++  /* Googleの地図はMapLibreの描画の下に敷き、下端のロゴと著作の表示に重ならないよう縮尺を上げる */
++  :global(.immich-google-basemap) {
++    position: absolute;
++    inset: 0;
++    z-index: 0;
++  }
++
++  :global(.immich-google-on .maplibregl-ctrl-bottom-left) {
++    bottom: 26px;
++  }
++</style>
+diff --git a/web/src/lib/utils/google-basemap.ts b/web/src/lib/utils/google-basemap.ts
+new file mode 100644
+index 0000000..771ee5a
+--- /dev/null
++++ b/web/src/lib/utils/google-basemap.ts
+@@ -0,0 +1,106 @@
++// Googleの地図(Maps JavaScript API、Dynamic Maps)を地図の背景に敷く。地図を1枚作るごとに課金の1回になるため、
++// 作る前に LOAD_URL を呼ぶ(CaddyがImmichのログインを確かめてPrism Chatへ中継し、Prism Chatと合わせた月の回数が上限の前ならキーを返す)。
++// 作った地図はページの中で使い回す。上限、キーの拒否、読込みの失敗では使わず、呼出し側はMapLibreのスタイル(MapTiler)に戻す
++const LOAD_URL = '/prism-maps/google-load';
++
++export type GoogleBasemap = {
++  div: HTMLDivElement;
++  map: { moveCamera(options: { center: { lat: number; lng: number }; zoom: number }): void };
++};
++type GoogleMaps = { Map: new (element: HTMLElement, options: object) => GoogleBasemap['map'] };
++
++let down = false;
++let api: Promise<GoogleMaps> | undefined;
++const free: GoogleBasemap[] = [];
++const failWatchers = new Set<() => void>();
++
++export const isGoogleBasemapDown = () => down;
++
++// キーが拒否された時(gm_authFailure)に、表示中の地図がMapTilerへ戻すために呼ばれる
++export const onGoogleBasemapFail = (watcher: () => void) => {
++  failWatchers.add(watcher);
++  return () => failWatchers.delete(watcher);
++};
++
++const fail = () => {
++  down = true;
++  for (const watcher of failWatchers) {
++    watcher();
++  }
++};
++
++const loadApi = (key: string) =>
++  (api ??= new Promise<GoogleMaps>((resolve, reject) => {
++    const global = globalThis as unknown as Record<string, unknown>;
++    global.gm_authFailure = fail;
++    global.__immichGoogleMaps = () => {
++      const maps = (global.google as { maps: { importLibrary(name: string): Promise<GoogleMaps> } }).maps;
++      maps.importLibrary('maps').then(resolve).catch(reject);
++    };
++    const query = new URLSearchParams({
++      key,
++      v: 'weekly',
++      language: 'ja',
++      region: 'JP',
++      loading: 'async',
++      callback: '__immichGoogleMaps',
++    });
++    const script = document.createElement('script');
++    script.src = `https://maps.googleapis.com/maps/api/js?${query}`;
++    script.async = true;
++    script.addEventListener('error', () => reject(new Error('Maps JavaScript APIを読めません')));
++    document.head.append(script);
++  }));
++
++// parentの一番下(MapLibreの描画より下)に地図を置いて返す。使えない時はundefined
++export const acquireGoogleBasemap = async (parent: HTMLElement): Promise<GoogleBasemap | undefined> => {
++  if (down) {
++    return;
++  }
++  const reused = free.pop();
++  if (reused) {
++    parent.prepend(reused.div);
++    return reused;
++  }
++  try {
++    // 返らない時に地図が空のままにならないよう、5秒で諦めてMapTilerにする
++    const response = await fetch(LOAD_URL, { method: 'POST', signal: AbortSignal.timeout(5000) });
++    const body = response.ok ? ((await response.json()) as { ok?: boolean; key?: string }) : {};
++    if (!body.ok || !body.key) {
++      down = true; // 今月の上限か、中継の無いドメイン
++      return;
++    }
++    const { Map } = await loadApi(body.key);
++    if (down) {
++      return;
++    }
++    // Googleは地図の要素の位置を書き換え、中の部品に大きなz-indexを付けるため、外側の要素で位置と重なりを決める
++    const div = document.createElement('div');
++    div.className = 'immich-google-basemap';
++    const inner = document.createElement('div');
++    inner.style.cssText = 'width: 100%; height: 100%';
++    div.append(inner);
++    parent.prepend(div);
++    const map = new Map(inner, {
++      center: { lat: 0, lng: 0 },
++      zoom: 1,
++      mapTypeId: 'hybrid',
++      tilt: 0,
++      disableDefaultUI: true,
++      gestureHandling: 'none',
++      keyboardShortcuts: false,
++      clickableIcons: false,
++      isFractionalZoomEnabled: true,
++    });
++    return { div, map };
++  } catch {
++    fail();
++  }
++};
++
++export const releaseGoogleBasemap = (basemap: GoogleBasemap) => {
++  basemap.div.remove();
++  if (!down) {
++    free.push(basemap);
++  }
++};

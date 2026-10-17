@@ -1,5 +1,5 @@
 diff --git a/web/src/lib/components/shared-components/map/Map.svelte b/web/src/lib/components/shared-components/map/Map.svelte
-index a3fda21..5efd516 100644
+index a3fda21..aa877e1 100644
 --- a/web/src/lib/components/shared-components/map/Map.svelte
 +++ b/web/src/lib/components/shared-components/map/Map.svelte
 @@ -16,6 +16,13 @@
@@ -53,14 +53,14 @@ index a3fda21..5efd516 100644
  
    export function addClipMapMarker(lng: number, lat: number) {
      if (!map) {
-@@ -296,10 +329,100 @@
+@@ -296,32 +329,126 @@
  
    onDestroy(() => {
      abortController?.abort();
 +    destroyed = true;
 +    stopGoogle();
-+  });
-+
+   });
+ 
 +  // MapLibreの拡大段は512pxの画像が基準で、Googleより1段小さい
 +  const syncGoogle = () => {
 +    if (map && google) {
@@ -131,7 +131,19 @@ index a3fda21..5efd516 100644
 +    }),
 +  );
 +
-+  $effect(() => {
+   $effect(() => {
+-    map?.setStyle(styleUrl, {
+-      transformStyle: (previousStyle, nextStyle) => {
+-        if (previousStyle) {
+-          // Preserves the custom map markers from the previous style when the theme is switched
+-          // Required until https://github.com/dimfeld/svelte-maplibre/issues/146 is fixed
+-          const customLayers = previousStyle.layers.filter((l) => l.type === 'fill' && l.source === 'geojson');
+-          const layers = nextStyle.layers.concat(customLayers);
+-          const sources = nextStyle.sources;
+-
+-          for (const [key, value] of Object.entries(previousStyle.sources || {})) {
+-            if (key.startsWith('geojson')) {
+-              sources[key] = value;
 +    if (map && googleState === 'pending') {
 +      const current = map;
 +      untrack(() => handlePromiseError(startGoogle(current)));
@@ -144,18 +156,52 @@ index a3fda21..5efd516 100644
 +      current.on('error', onStyleError);
 +      return () => current.off('error', onStyleError);
 +    }
-   });
- 
-   $effect(() => {
--    map?.setStyle(styleUrl, {
++  });
++
++  $effect(() => {
 +    if (googleState === 'pending') {
 +      return;
 +    }
 +    map?.setStyle(googleState === 'on' ? EMPTY_STYLE : fallbackStyleUrl, {
-       transformStyle: (previousStyle, nextStyle) => {
-         if (previousStyle) {
-           // Preserves the custom map markers from the previous style when the theme is switched
-@@ -384,8 +507,9 @@
++      // 読込みに失敗したスタイルの後で渡すと、MapLibreが次のスタイルを読み終えずに止まる(予備のstyle.jsonが読めない時)。
++      // 写真の印の層を引き継ぐのは読み終えたスタイルからの切替の時だけでよい
++      transformStyle: map.isStyleLoaded()
++        ? (previousStyle, nextStyle) => {
++            if (previousStyle) {
++              // Preserves the custom map markers from the previous style when the theme is switched
++              // Required until https://github.com/dimfeld/svelte-maplibre/issues/146 is fixed
++              const customLayers = previousStyle.layers.filter((l) => l.type === 'fill' && l.source === 'geojson');
++              const layers = nextStyle.layers.concat(customLayers);
++              const sources = nextStyle.sources;
++
++              for (const [key, value] of Object.entries(previousStyle.sources || {})) {
++                if (key.startsWith('geojson')) {
++                  sources[key] = value;
++                }
++              }
++
++              return {
++                ...nextStyle,
++                sources,
++                layers,
++              };
+             }
++            return nextStyle;
+           }
+-
+-          return {
+-            ...nextStyle,
+-            sources,
+-            layers,
+-          };
+-        }
+-        return nextStyle;
+-      },
++        : undefined,
+     });
+   });
+ 
+@@ -384,8 +511,9 @@
        event.setMaxZoom(18);
        event.on('click', handleMapClick);
        event.on('moveend', handleMoveEnd);
@@ -167,7 +213,7 @@ index a3fda21..5efd516 100644
        }
      }}
      bind:map
-@@ -406,7 +530,9 @@
+@@ -406,7 +534,9 @@
              </Control>
            {/if}
            <ScaleControl />
@@ -178,7 +224,7 @@ index a3fda21..5efd516 100644
          {/if}
        {/if}
  
-@@ -493,3 +619,16 @@
+@@ -493,3 +623,16 @@
      </Container>
    {/snippet}
  </svelte:boundary>

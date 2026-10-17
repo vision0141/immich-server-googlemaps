@@ -8,8 +8,8 @@
 
 - アセット詳細パネルの外部マップリンクを `OpenStreetMap` から `Google Maps` に変更
   表示は `place/{DMS}/@{lat},{lon},450m/data=...` 形式で、共有リンクに近い見え方を優先。DMSは0.1秒単位に丸めてから度、分、秒へ分け、秒が `60.0` にならないようにする
-- 地図の背景をGoogleの地図(Maps JavaScript API)にする。Googleが使えない時は管理画面の地図スタイル(MapTiler)のまま
-  地図を1枚作る前に同じoriginの `/prism-maps/google-load` を呼び、`{ ok, key }` を受け取る(自宅環境ではCaddyがImmichのログインを確かめてPrism Chatへ中継し、Prism Chatの地図と合わせて月9,900回で断る)。断られた時、この入口が無い時、キーの拒否(`gm_authFailure`)、読込みの失敗では、MapTilerのスタイルにする。作った地図はページの中で使い回し、課金の回数を増やさない
+- 地図の背景をGoogleの地図(Maps JavaScript API)にする。Googleが使えない時は予備のstyle.json(Googleの画像)、それも無ければ管理画面の地図スタイル(MapTiler)
+  地図を1枚作る前に同じoriginの `/prism-maps/google-load` を呼び、`{ ok, key }` を受け取る(自宅環境ではCaddyがImmichのログインを確かめてPrism Chatへ中継し、Prism Chatの地図と合わせて月9,900回で断る)。断られた時、この入口が無い時、キーの拒否(`gm_authFailure`)、読込みの失敗では、同じoriginの予備 `/prism-maps/style.json`(自宅環境ではGoogleの画像の地図、Map Tiles API。その上限の後はMapTilerへ転送)を読み、それも読めなければ管理画面の地図スタイル(MapTiler)にする。作った地図はページの中で使い回し、課金の回数を増やさない
 - Intel `QSV` のレート制御を調整し、`Auto` と `maxBitrate` の組み合わせで bitrate mode に切り替わるように修正
 - 画像設定のプレビュー解像度に `Original` を追加し、画像・動画プレビューを元解像度で生成できるように修正
 - Web非対応画像の `fullsize` 生成で、`IMG_3593.HEIC` のような大文字拡張子も通常ジョブで拾えるように修正

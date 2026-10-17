@@ -1,5 +1,5 @@
 diff --git a/web/src/lib/components/shared-components/map/Map.svelte b/web/src/lib/components/shared-components/map/Map.svelte
-index a3fda21..380523a 100644
+index a3fda21..5efd516 100644
 --- a/web/src/lib/components/shared-components/map/Map.svelte
 +++ b/web/src/lib/components/shared-components/map/Map.svelte
 @@ -16,6 +16,13 @@
@@ -16,14 +16,20 @@ index a3fda21..380523a 100644
    import { getMapMarkers, type MapMarkerResponseDto } from '@immich/sdk';
    import { Alert, Container, Icon, modalManager, Text, Theme, themeManager } from '@immich/ui';
    import { mdiCog, mdiImageMultiple, mdiMap, mdiMapMarker } from '@mdi/js';
-@@ -110,6 +117,15 @@
+@@ -110,10 +117,36 @@
    let marker: Marker | null = null;
    let abortController: AbortController;
  
 +  // 背景をGoogleの地図にするか。決まるまでスタイルを読まない(MapTilerが一瞬出て数えられないように)。
 +  // Googleの間はMapLibreを空のスタイルにして写真の印だけを描き、下に敷いたGoogleの地図をMapLibreの位置と拡大に合わせる
 +  // 初期位置は管理画面の地図スタイル(MapTilerの独自スタイル)と同じにする。MapLibreは位置の指定が無い地図をスタイルの位置で開く
-+  const EMPTY_STYLE = { version: 8 as const, center: [139.803, 35.615], zoom: 8, sources: {}, layers: [] };
++  const EMPTY_STYLE = {
++    version: 8 as const,
++    center: [139.803, 35.615] as [number, number],
++    zoom: 8,
++    sources: {},
++    layers: [],
++  };
 +  let googleState: 'pending' | 'on' | 'off' = $state(isGoogleBasemapDown() ? 'off' : 'pending');
 +  let google: GoogleBasemap | undefined;
 +  let globeControl: GlobeControl | undefined;
@@ -32,7 +38,22 @@ index a3fda21..380523a 100644
    const mapTheme = $derived($mapSettings.allowDarkMode ? themeManager.value : Theme.Light);
    const styleUrl = $derived(
      mapTheme === Theme.Dark ? serverConfigManager.value.mapDarkStyleUrl : serverConfigManager.value.mapLightStyleUrl,
-@@ -296,10 +312,92 @@
+   );
++  // Googleの地図が使えない時の予備。同じoriginの /prism-maps/style.json はGoogleの画像(Map Tiles API)の地図で、その月の上限の後は
++  // MapTilerのスタイルへ転送される(自宅環境ではCaddyがPrism Chatへ中継する)。読めない時は管理画面の地図スタイルにする
++  let fallbackDown = $state(false);
++  const fallbackStyleUrl = $derived(fallbackDown ? styleUrl : new URL('/prism-maps/style.json', location.href).href);
++
++  // 予備のstyle.jsonを読めなかった時(中継の無い環境など)。読み終えた後の画像の失敗(sourceIdが付く)は除く
++  const onStyleError = (event: object) => {
++    if (!fallbackDown && googleState === 'off' && !('sourceId' in event) && !map?.isStyleLoaded()) {
++      fallbackDown = true;
++    }
++  };
+ 
+   export function addClipMapMarker(lng: number, lat: number) {
+     if (!map) {
+@@ -296,10 +329,100 @@
  
    onDestroy(() => {
      abortController?.abort();
@@ -115,6 +136,14 @@ index a3fda21..380523a 100644
 +      const current = map;
 +      untrack(() => handlePromiseError(startGoogle(current)));
 +    }
++  });
++
++  $effect(() => {
++    if (map) {
++      const current = map;
++      current.on('error', onStyleError);
++      return () => current.off('error', onStyleError);
++    }
    });
  
    $effect(() => {
@@ -122,11 +151,11 @@ index a3fda21..380523a 100644
 +    if (googleState === 'pending') {
 +      return;
 +    }
-+    map?.setStyle(googleState === 'on' ? EMPTY_STYLE : styleUrl, {
++    map?.setStyle(googleState === 'on' ? EMPTY_STYLE : fallbackStyleUrl, {
        transformStyle: (previousStyle, nextStyle) => {
          if (previousStyle) {
            // Preserves the custom map markers from the previous style when the theme is switched
-@@ -384,8 +482,9 @@
+@@ -384,8 +507,9 @@
        event.setMaxZoom(18);
        event.on('click', handleMapClick);
        event.on('moveend', handleMoveEnd);
@@ -138,7 +167,7 @@ index a3fda21..380523a 100644
        }
      }}
      bind:map
-@@ -406,7 +505,9 @@
+@@ -406,7 +530,9 @@
              </Control>
            {/if}
            <ScaleControl />
@@ -149,7 +178,7 @@ index a3fda21..380523a 100644
          {/if}
        {/if}
  
-@@ -493,3 +594,16 @@
+@@ -493,3 +619,16 @@
      </Container>
    {/snippet}
  </svelte:boundary>
@@ -168,13 +197,13 @@ index a3fda21..380523a 100644
 +</style>
 diff --git a/web/src/lib/utils/google-basemap.ts b/web/src/lib/utils/google-basemap.ts
 new file mode 100644
-index 0000000..771ee5a
+index 0000000..8980eda
 --- /dev/null
 +++ b/web/src/lib/utils/google-basemap.ts
 @@ -0,0 +1,106 @@
 +// Googleの地図(Maps JavaScript API、Dynamic Maps)を地図の背景に敷く。地図を1枚作るごとに課金の1回になるため、
 +// 作る前に LOAD_URL を呼ぶ(CaddyがImmichのログインを確かめてPrism Chatへ中継し、Prism Chatと合わせた月の回数が上限の前ならキーを返す)。
-+// 作った地図はページの中で使い回す。上限、キーの拒否、読込みの失敗では使わず、呼出し側はMapLibreのスタイル(MapTiler)に戻す
++// 作った地図はページの中で使い回す。上限、キーの拒否、読込みの失敗では使わず、呼出し側はMapLibreのスタイル(予備のGoogleの画像、それも使えなければMapTiler)にする
 +const LOAD_URL = '/prism-maps/google-load';
 +
 +export type GoogleBasemap = {

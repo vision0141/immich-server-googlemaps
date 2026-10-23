@@ -1,0 +1,152 @@
+diff --git a/server/src/services/ocr.service.spec.ts b/server/src/services/ocr.service.spec.ts
+index 9e6ff9a..e046634 100644
+--- a/server/src/services/ocr.service.spec.ts
++++ b/server/src/services/ocr.service.spec.ts
+@@ -189,6 +189,70 @@ describe(OcrService.name, () => {
+       expect(mocks.ocr.upsert).not.toHaveBeenCalled();
+     });
+ 
++    describe('cloud OCR gateway', () => {
++      const cloud = { box: [0.1, 0.1, 0.9, 0.1, 0.9, 0.2, 0.1, 0.2], boxScore: [0.99], text: ['請求書'], textScore: [0.98] };
++
++      beforeEach(() => {
++        vi.stubEnv('IMMICH_CLOUD_OCR_URL', 'http://cloud-ocr-gateway:9190');
++        vi.stubEnv('IMMICH_CLOUD_OCR_TOKEN', 'token');
++      });
++
++      afterEach(() => {
++        vi.unstubAllEnvs();
++        vi.unstubAllGlobals();
++      });
++
++      it('should save the cloud result when the gateway reads the asset', async () => {
++        const asset = AssetFactory.create();
++        mockOcrResult('local');
++        const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: 'cloud', ocr: cloud })));
++        vi.stubGlobal('fetch', fetchMock);
++
++        expect(await sut.handleOcr({ id: asset.id })).toEqual(JobStatus.Success);
++
++        expect(fetchMock).toHaveBeenCalledWith(
++          'http://cloud-ocr-gateway:9190/v1/immich/ocr',
++          expect.objectContaining({ method: 'POST', headers: expect.objectContaining({ Authorization: 'Bearer token' }) }),
++        );
++        expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
++          assetId: asset.id,
++          preliminary: expect.objectContaining({ text: ['local'] }),
++        });
++        expect(mocks.ocr.upsert).toHaveBeenCalledWith(
++          asset.id,
++          [expect.objectContaining({ text: '請求書', x1: 0.1, y3: 0.2, boxScore: 0.99, textScore: 0.98 })],
++          '請求 求書',
++        );
++      });
++
++      it('should keep the local result when the gateway declines, fails or returns a broken result', async () => {
++        const asset = AssetFactory.create();
++        for (const fetchMock of [
++          vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: 'local', reason: 'quota' }))),
++          vi.fn().mockResolvedValue(new Response('error', { status: 500 })),
++          vi.fn().mockRejectedValue(new Error('timeout')),
++          vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: 'cloud', ocr: { ...cloud, box: [1, 2] } }))),
++        ]) {
++          mockOcrResult('local');
++          vi.stubGlobal('fetch', fetchMock);
++          mocks.ocr.upsert.mockClear();
++
++          expect(await sut.handleOcr({ id: asset.id })).toEqual(JobStatus.Success);
++          expect(mocks.ocr.upsert).toHaveBeenCalledWith(asset.id, [expect.objectContaining({ text: 'local' })], 'local');
++        }
++      });
++
++      it('should not call the gateway when the local OCR finds no text', async () => {
++        const asset = AssetFactory.create();
++        mockOcrResult();
++        const fetchMock = vi.fn();
++        vi.stubGlobal('fetch', fetchMock);
++
++        expect(await sut.handleOcr({ id: asset.id })).toEqual(JobStatus.Success);
++        expect(fetchMock).not.toHaveBeenCalled();
++      });
++    });
++
+     describe('search tokenization', () => {
+       it('should generate bigrams for Chinese text', async () => {
+         const asset = AssetFactory.create();
+diff --git a/server/src/services/ocr.service.ts b/server/src/services/ocr.service.ts
+index c91524e..a38febc 100644
+--- a/server/src/services/ocr.service.ts
++++ b/server/src/services/ocr.service.ts
+@@ -44,7 +44,8 @@ export class OcrService extends BaseService {
+       return JobStatus.Skipped;
+     }
+ 
+-    const ocrResults = await this.machineLearningRepository.ocr(asset.previewFile, machineLearning.ocr);
++    const preliminary = await this.machineLearningRepository.ocr(asset.previewFile, machineLearning.ocr);
++    const ocrResults = await this.readWithCloudOcr(id, preliminary);
+     const { ocrDataList, searchText } = this.parseOcrResults(id, ocrResults);
+     await this.ocrRepository.upsert(id, ocrDataList, searchText);
+ 
+@@ -54,6 +55,40 @@ export class OcrService extends BaseService {
+     return JobStatus.Success;
+   }
+ 
++  /**
++   * Custom build: when the local OCR (preliminary read) finds at least one line, ask the cloud OCR gateway
++   * (IMMICH_CLOUD_OCR_URL) to read the original photo. The gateway keeps the monthly free quota and returns
++   * the result in the same shape, or declines. On decline, timeout or any error, the local result is kept.
++   */
++  private async readWithCloudOcr(id: string, preliminary: OCR): Promise<OCR> {
++    const url = process.env.IMMICH_CLOUD_OCR_URL;
++    const token = process.env.IMMICH_CLOUD_OCR_TOKEN;
++    if (!url || !token || preliminary.text.length === 0) {
++      return preliminary;
++    }
++
++    try {
++      const response = await fetch(`${url.replace(/\/$/, '')}/v1/immich/ocr`, {
++        method: 'POST',
++        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
++        body: JSON.stringify({ assetId: id, preliminary }),
++        signal: AbortSignal.timeout(Number(process.env.IMMICH_CLOUD_OCR_TIMEOUT_MS || 180_000)),
++      });
++      if (!response.ok) {
++        this.logger.warn(`Cloud OCR gateway returned HTTP ${response.status} for ${id}; keeping local OCR`);
++        return preliminary;
++      }
++      const body = (await response.json()) as { status?: string; reason?: string; ocr?: OCR };
++      if (body.status === 'cloud' && isOcrResult(body.ocr)) {
++        return body.ocr;
++      }
++      this.logger.debug(`Cloud OCR declined for ${id}: ${body.reason ?? body.status}`);
++    } catch (error) {
++      this.logger.warn(`Cloud OCR gateway failed for ${id}; keeping local OCR: ${error}`);
++    }
++    return preliminary;
++  }
++
+   private parseOcrResults(id: string, { box, boxScore, text, textScore }: OCR) {
+     const ocrDataList = [];
+     const searchTokens = [];
+@@ -80,3 +115,21 @@ export class OcrService extends BaseService {
+     return { ocrDataList, searchText: searchTokens.join(' ') };
+   }
+ }
++
++const isOcrResult = (value: unknown): value is OCR => {
++  if (!value || typeof value !== 'object') {
++    return false;
++  }
++  const { text, box, boxScore, textScore } = value as Partial<OCR>;
++  return (
++    Array.isArray(text) &&
++    text.every((item) => typeof item === 'string') &&
++    Array.isArray(box) &&
++    box.length === text.length * 8 &&
++    box.every((item) => typeof item === 'number' && Number.isFinite(item)) &&
++    Array.isArray(boxScore) &&
++    boxScore.length === text.length &&
++    Array.isArray(textScore) &&
++    textScore.length === text.length
++  );
++};

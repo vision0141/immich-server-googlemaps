@@ -13,6 +13,7 @@
 - Intel `QSV` のレート制御を調整し、`Auto` と `maxBitrate` の組み合わせで bitrate mode に切り替わるように修正
 - 画像設定のプレビュー解像度に `Original` を追加し、画像・動画プレビューを元解像度で生成できるように修正
 - Web非対応画像の `fullsize` 生成で、`IMG_3593.HEIC` のような大文字拡張子も通常ジョブで拾えるように修正
+- OCRで、今のMLの下読みが1行以上の文字を見つけた時だけ、クラウドOCR窓口(`IMMICH_CLOUD_OCR_URL`、`IMMICH_CLOUD_OCR_TOKEN`)へassetIdと下読みの結果を送る。窓口がImmichと同じ形の結果を返したらそれを保存し、断られた、失敗した、時間切れ(`IMMICH_CLOUD_OCR_TIMEOUT_MS`、既定180秒)の時は下読みの結果を保存する。環境変数が無ければ従来どおり。窓口は自宅環境の `DockerData/cloud-ocr-gateway`(Google Document AIとCloud Visionの無料枠の中で読む)
 - WebUI の写真ビューアで元画像ロード後に低解像度レイヤーが残る問題は、v3 upstream 側の新しい `AdaptiveImage` 実装で解消済みのため、旧reraster patchは外しています
 - 回転メタデータ付きの縦動画が `608x1080` のように潰れる問題は、v3.3.0 upstream の `isFrameVertical` 修正で解消済みのため、旧rotated portrait scaling patchは外しています
 
@@ -54,6 +55,7 @@ Watchtower 用の推奨:
 - `server/src/services/media.service.ts`
 - `server/src/repositories/asset-job.repository.ts`
 - `server/src/utils/media.ts`
+- `server/src/services/ocr.service.ts`、`server/src/services/ocr.service.spec.ts`(`immich-cloud-ocr.patch`)
 
 変更内容:
 

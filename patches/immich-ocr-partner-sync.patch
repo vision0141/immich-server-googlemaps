@@ -1,0 +1,171 @@
+diff --git a/server/src/queries/sync.repository.sql b/server/src/queries/sync.repository.sql
+index 856f8a4..5677712 100644
+--- a/server/src/queries/sync.repository.sql
++++ b/server/src/queries/sync.repository.sql
+@@ -654,7 +654,17 @@ from
+ where
+   "asset_ocr_audit"."id" < $1
+   and "asset_ocr_audit"."id" > $2
+-  and "asset"."ownerId" = $3
++  and (
++    "asset"."ownerId" = $3
++    or "asset"."ownerId" in (
++      select
++        "sharedById"
++      from
++        "partner"
++      where
++        "sharedWithId" = $4
++    )
++  )
+ order by
+   "asset_ocr_audit"."id" asc
+ 
+@@ -681,7 +691,17 @@ from
+ where
+   "asset_ocr"."updateId" < $1
+   and "asset_ocr"."updateId" > $2
+-  and "asset"."ownerId" = $3
++  and (
++    "asset"."ownerId" = $3
++    or "asset"."ownerId" in (
++      select
++        "sharedById"
++      from
++        "partner"
++      where
++        "sharedWithId" = $4
++    )
++  )
+ order by
+   "asset_ocr"."updateId" asc
+ 
+diff --git a/server/src/repositories/sync.repository.ts b/server/src/repositories/sync.repository.ts
+index a8985a6..3e259d8 100644
+--- a/server/src/repositories/sync.repository.ts
++++ b/server/src/repositories/sync.repository.ts
+@@ -837,13 +837,20 @@ class AssetMetadataSync extends BaseSync {
+   }
+ }
+ 
++// パートナーの写真のOCRも送る。範囲はパートナーの資産とexifの同期(PartnerAssetsSync、PartnerAssetExifsSync)と同じにし、
++// アプリの手元のDBで外部キー(asset_ocr_entity.asset_id -> remote_asset_entity.id)が満たせる写真だけにする
+ class AssetOcrSync extends BaseSync {
+   @GenerateSql({ params: [dummyQueryOptions, DummyValue.UUID], stream: true })
+   getDeletes(options: SyncQueryOptions, userId: string) {
+     return this.auditQuery('asset_ocr_audit', options)
+       .select(['asset_ocr_audit.id', 'asset_ocr_audit.assetId', 'asset_ocr_audit.deletedAt'])
+       .leftJoin('asset', 'asset.id', 'asset_ocr_audit.assetId')
+-      .where('asset.ownerId', '=', userId)
++      .where((eb) =>
++        eb.or([
++          eb('asset.ownerId', '=', userId),
++          eb('asset.ownerId', 'in', eb.selectFrom('partner').select(['sharedById']).where('sharedWithId', '=', userId)),
++        ]),
++      )
+       .stream();
+   }
+ 
+@@ -856,7 +863,12 @@ class AssetOcrSync extends BaseSync {
+     return this.upsertQuery('asset_ocr', options)
+       .select(columns.syncAssetOcr)
+       .innerJoin('asset', 'asset.id', 'asset_ocr.assetId')
+-      .where('asset.ownerId', '=', userId)
++      .where((eb) =>
++        eb.or([
++          eb('asset.ownerId', '=', userId),
++          eb('asset.ownerId', 'in', eb.selectFrom('partner').select(['sharedById']).where('sharedWithId', '=', userId)),
++        ]),
++      )
+       .stream();
+   }
+ }
+diff --git a/server/test/medium/specs/sync/sync-asset-ocr.spec.ts b/server/test/medium/specs/sync/sync-asset-ocr.spec.ts
+index e004c5d..036dab2 100644
+--- a/server/test/medium/specs/sync/sync-asset-ocr.spec.ts
++++ b/server/test/medium/specs/sync/sync-asset-ocr.spec.ts
+@@ -433,3 +433,84 @@ describe(SyncEntityType.AssetOcrDeleteV1, () => {
+     ]);
+   });
+ });
++
++const ocrRow = (assetId: string, text: string) => ({
++  assetId,
++  x1: 0.1,
++  y1: 0.2,
++  x2: 0.9,
++  y2: 0.2,
++  x3: 0.9,
++  y3: 0.8,
++  x4: 0.1,
++  y4: 0.8,
++  boxScore: 0.95,
++  textScore: 0.92,
++  text,
++  isVisible: true,
++});
++
++describe('AssetOcrV1 partner assets', () => {
++  it('should sync OCR of assets shared by a partner', async () => {
++    const { auth, ctx } = await setup();
++    const ocrRepo = ctx.get(OcrRepository);
++    const { user: partner } = await ctx.newUser();
++    await ctx.newPartner({ sharedById: partner.id, sharedWithId: auth.user.id });
++    const { asset } = await ctx.newAsset({ ownerId: partner.id });
++    await ocrRepo.upsert(asset.id, [ocrRow(asset.id, 'Partner Text')], 'Partner Text');
++
++    const response = await ctx.syncStream(auth, [SyncRequestType.AssetOcrV1]);
++    expect(response).toEqual([
++      {
++        ack: expect.any(String),
++        data: expect.objectContaining({ assetId: asset.id, text: 'Partner Text' }),
++        type: SyncEntityType.AssetOcrV1,
++      },
++      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
++    ]);
++
++    await ctx.syncAckAll(auth, response);
++    await ctx.assertSyncIsComplete(auth, [SyncRequestType.AssetOcrV1]);
++  });
++
++  it('should not sync OCR of other users or of users the auth user only shares with', async () => {
++    const { auth, ctx } = await setup();
++    const ocrRepo = ctx.get(OcrRepository);
++    const { user: stranger } = await ctx.newUser();
++    const { user: sharedWith } = await ctx.newUser();
++    await ctx.newPartner({ sharedById: auth.user.id, sharedWithId: sharedWith.id });
++    const { asset: strangerAsset } = await ctx.newAsset({ ownerId: stranger.id });
++    const { asset: sharedWithAsset } = await ctx.newAsset({ ownerId: sharedWith.id });
++    await ocrRepo.upsert(strangerAsset.id, [ocrRow(strangerAsset.id, 'Stranger')], 'Stranger');
++    await ocrRepo.upsert(sharedWithAsset.id, [ocrRow(sharedWithAsset.id, 'Shared With')], 'Shared With');
++
++    await ctx.assertSyncIsComplete(auth, [SyncRequestType.AssetOcrV1]);
++  });
++
++  it('should sync OCR deletes of assets shared by a partner', async () => {
++    const { auth, ctx } = await setup();
++    const ocrRepo = ctx.get(OcrRepository);
++    const { user: partner } = await ctx.newUser();
++    await ctx.newPartner({ sharedById: partner.id, sharedWithId: auth.user.id });
++    const { asset } = await ctx.newAsset({ ownerId: partner.id });
++    await ocrRepo.upsert(asset.id, [ocrRow(asset.id, 'Partner Text')], 'Partner Text');
++
++    const response = await ctx.syncStream(auth, [SyncRequestType.AssetOcrV1]);
++    await ctx.syncAckAll(auth, response);
++
++    await ocrRepo.upsert(asset.id, [], '');
++
++    const deleteResponse = await ctx.syncStream(auth, [SyncRequestType.AssetOcrV1]);
++    expect(deleteResponse).toEqual([
++      {
++        ack: expect.any(String),
++        data: expect.objectContaining({ assetId: asset.id }),
++        type: SyncEntityType.AssetOcrDeleteV1,
++      },
++      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
++    ]);
++
++    await ctx.syncAckAll(auth, deleteResponse);
++    await ctx.assertSyncIsComplete(auth, [SyncRequestType.AssetOcrV1]);
++  });
++});

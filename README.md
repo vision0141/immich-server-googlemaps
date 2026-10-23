@@ -14,6 +14,7 @@
 - 画像設定のプレビュー解像度に `Original` を追加し、画像・動画プレビューを元解像度で生成できるように修正
 - Web非対応画像の `fullsize` 生成で、`IMG_3593.HEIC` のような大文字拡張子も通常ジョブで拾えるように修正
 - OCRは、まずクラウドOCR窓口(`IMMICH_CLOUD_OCR_URL`、`IMMICH_CLOUD_OCR_TOKEN`)へassetIdを送り、窓口がImmichと同じ形の結果を返したらそれを保存する(MLのOCRは呼ばない)。断られた(月の無料枠の上限など)、失敗した、時間切れ(`IMMICH_CLOUD_OCR_TIMEOUT_MS`、既定180秒)の時だけMLのOCRで縮小版を読む。環境変数が無ければ従来どおり。窓口は自宅環境の `DockerData/cloud-ocr-gateway`(Google Document AI、Cloud Vision、AzureのF0の無料枠の中で読む)
+- アプリ(モバイル)へのOCRの同期(`AssetOcrV1`)に、自分へ共有しているパートナーの写真のOCRも含める。upstreamは自分の写真だけを送るため、パートナーの写真はWebでは枠が出てもアプリでは出ない。範囲はパートナーの資産とexifの同期と同じ(`inTimeline` を問わない)で、アプリの手元のDBの外部キーを満たす。共有アルバムだけで見える写真は、upstreamのアルバムの資産の同期が送る範囲を細かく絞っており、合わせないとアプリの同期が外部キー違反で止まるため含めない。パートナーになる前のOCRは送らないため、既存の端末はOCRの同期の記録(`session_sync_checkpoint` の `AssetOcrV1`)を消して送り直させる(`immich-ocr-partner-sync.patch`)
 - WebUI の写真ビューアで元画像ロード後に低解像度レイヤーが残る問題は、v3 upstream 側の新しい `AdaptiveImage` 実装で解消済みのため、旧reraster patchは外しています
 - 回転メタデータ付きの縦動画が `608x1080` のように潰れる問題は、v3.3.0 upstream の `isFrameVertical` 修正で解消済みのため、旧rotated portrait scaling patchは外しています
 
@@ -56,6 +57,7 @@ Watchtower 用の推奨:
 - `server/src/repositories/asset-job.repository.ts`
 - `server/src/utils/media.ts`
 - `server/src/services/ocr.service.ts`、`server/src/services/ocr.service.spec.ts`(`immich-cloud-ocr.patch`)
+- `server/src/repositories/sync.repository.ts`、`server/src/queries/sync.repository.sql`、`server/test/medium/specs/sync/sync-asset-ocr.spec.ts`(`immich-ocr-partner-sync.patch`)
 
 変更内容:
 
@@ -125,6 +127,7 @@ Current patches include:
 - adjusting Intel `QSV` rate-control behavior so `Auto + maxBitrate` switches to bitrate mode
 - adding an `Original` preview-resolution option for image settings so image and video previews can be generated at source resolution
 - making fullsize thumbnail jobs pick up web-unsupported images with uppercase filename extensions such as `IMG_3593.HEIC`
+- including OCR of assets shared by partners in the mobile OCR sync (`AssetOcrV1`), using the same scope as partner asset and exif sync; album-only assets are not included
 - the former WebUI photo-viewer reraster workaround is no longer applied because the v3 upstream `AdaptiveImage` implementation already addresses the stale low-resolution layer behavior
 - the former rotated portrait scaling patch is no longer applied because upstream v3.3.0 fixed it with `isFrameVertical`
 
@@ -166,6 +169,7 @@ Upstream file:
 - `server/src/services/media.service.ts`
 - `server/src/repositories/asset-job.repository.ts`
 - `server/src/utils/media.ts`
+- `server/src/repositories/sync.repository.ts`, `server/src/queries/sync.repository.sql`, `server/test/medium/specs/sync/sync-asset-ocr.spec.ts`
 
 Change:
 

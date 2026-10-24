@@ -1,13 +1,18 @@
 diff --git a/server/src/services/ocr.service.spec.ts b/server/src/services/ocr.service.spec.ts
-index 9e6ff9a..920d916 100644
+index 9e6ff9a..b74564c 100644
 --- a/server/src/services/ocr.service.spec.ts
 +++ b/server/src/services/ocr.service.spec.ts
-@@ -189,6 +189,70 @@ describe(OcrService.name, () => {
+@@ -189,6 +189,97 @@ describe(OcrService.name, () => {
        expect(mocks.ocr.upsert).not.toHaveBeenCalled();
      });
  
 +    describe('cloud OCR gateway', () => {
-+      const cloud = { box: [0.1, 0.1, 0.9, 0.1, 0.9, 0.2, 0.1, 0.2], boxScore: [0.99], text: ['請求書'], textScore: [0.98] };
++      const cloud = {
++        box: [0.1, 0.1, 0.9, 0.1, 0.9, 0.2, 0.1, 0.2],
++        boxScore: [0.99],
++        text: ['請求書'],
++        textScore: [0.98],
++      };
 +
 +      beforeEach(() => {
 +        vi.stubEnv('IMMICH_CLOUD_OCR_URL', 'http://cloud-ocr-gateway:9190');
@@ -22,14 +27,17 @@ index 9e6ff9a..920d916 100644
 +      it('should save the cloud result without the local OCR when the gateway reads the asset', async () => {
 +        const asset = AssetFactory.create();
 +        mockOcrResult('local');
-+        const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: 'cloud', ocr: cloud })));
++        const fetchMock = vi.fn().mockResolvedValue(Response.json({ status: 'cloud', ocr: cloud }));
 +        vi.stubGlobal('fetch', fetchMock);
 +
 +        expect(await sut.handleOcr({ id: asset.id })).toEqual(JobStatus.Success);
 +
 +        expect(fetchMock).toHaveBeenCalledWith(
 +          'http://cloud-ocr-gateway:9190/v1/immich/ocr',
-+          expect.objectContaining({ method: 'POST', headers: expect.objectContaining({ Authorization: 'Bearer token' }) }),
++          expect.objectContaining({
++            method: 'POST',
++            headers: expect.objectContaining({ Authorization: 'Bearer token' }),
++          }),
 +        );
 +        expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ assetId: asset.id });
 +        expect(mocks.machineLearning.ocr).not.toHaveBeenCalled();
@@ -40,21 +48,40 @@ index 9e6ff9a..920d916 100644
 +        );
 +      });
 +
-+      it('should use the local OCR when the gateway declines, fails or returns a broken result', async () => {
++      it('should use the local OCR when the gateway answers local', async () => {
++        const asset = AssetFactory.create();
++        mockOcrResult('local');
++        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ status: 'local', reason: 'ml' })));
++
++        expect(await sut.handleOcr({ id: asset.id })).toEqual(JobStatus.Success);
++        expect(mocks.ocr.upsert).toHaveBeenCalledWith(asset.id, [expect.objectContaining({ text: 'local' })], 'local');
++      });
++
++      it('should keep the stored OCR without the local OCR when the gateway answers keep', async () => {
++        const asset = AssetFactory.create();
++        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ status: 'keep', reason: 'none' })));
++
++        expect(await sut.handleOcr({ id: asset.id })).toEqual(JobStatus.Success);
++        expect(mocks.machineLearning.ocr).not.toHaveBeenCalled();
++        expect(mocks.ocr.upsert).not.toHaveBeenCalled();
++        expect(mocks.asset.upsertJobStatus).toHaveBeenCalledWith({ assetId: asset.id, ocrAt: expect.any(Date) });
++      });
++
++      it('should fail the job without the local OCR when the gateway fails or returns a broken result', async () => {
 +        const asset = AssetFactory.create();
 +        for (const fetchMock of [
-+          vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: 'local', reason: 'quota' }))),
 +          vi.fn().mockResolvedValue(new Response('error', { status: 500 })),
 +          vi.fn().mockRejectedValue(new Error('timeout')),
-+          vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: 'cloud', ocr: { ...cloud, box: [1, 2] } }))),
++          vi.fn().mockResolvedValue(Response.json({ status: 'cloud', ocr: { ...cloud, box: [1, 2] } })),
++          vi.fn().mockResolvedValue(Response.json({ status: 'unknown' })),
 +        ]) {
-+          mockOcrResult('local');
 +          vi.stubGlobal('fetch', fetchMock);
-+          mocks.ocr.upsert.mockClear();
 +
-+          expect(await sut.handleOcr({ id: asset.id })).toEqual(JobStatus.Success);
-+          expect(mocks.ocr.upsert).toHaveBeenCalledWith(asset.id, [expect.objectContaining({ text: 'local' })], 'local');
++          expect(await sut.handleOcr({ id: asset.id })).toEqual(JobStatus.Failed);
 +        }
++        expect(mocks.machineLearning.ocr).not.toHaveBeenCalled();
++        expect(mocks.ocr.upsert).not.toHaveBeenCalled();
++        expect(mocks.asset.upsertJobStatus).not.toHaveBeenCalled();
 +      });
 +
 +      it('should not call the gateway when it is not configured', async () => {
@@ -74,34 +101,49 @@ index 9e6ff9a..920d916 100644
        it('should generate bigrams for Chinese text', async () => {
          const asset = AssetFactory.create();
 diff --git a/server/src/services/ocr.service.ts b/server/src/services/ocr.service.ts
-index c91524e..57e272c 100644
+index c91524e..7f231e4 100644
 --- a/server/src/services/ocr.service.ts
 +++ b/server/src/services/ocr.service.ts
-@@ -44,7 +44,9 @@ export class OcrService extends BaseService {
+@@ -44,16 +44,65 @@ export class OcrService extends BaseService {
        return JobStatus.Skipped;
      }
  
 -    const ocrResults = await this.machineLearningRepository.ocr(asset.previewFile, machineLearning.ocr);
-+    const ocrResults =
-+      (await this.readWithCloudOcr(id)) ??
-+      (await this.machineLearningRepository.ocr(asset.previewFile, machineLearning.ocr));
-     const { ocrDataList, searchText } = this.parseOcrResults(id, ocrResults);
-     await this.ocrRepository.upsert(id, ocrDataList, searchText);
+-    const { ocrDataList, searchText } = this.parseOcrResults(id, ocrResults);
+-    await this.ocrRepository.upsert(id, ocrDataList, searchText);
++    const cloud = await this.askCloudOcr(id);
++    if (cloud.status === 'unavailable') {
++      // Do not fall back to the local OCR. ocrAt stays empty, so the gateway queues the asset again later.
++      return JobStatus.Failed;
++    }
  
-@@ -54,6 +56,40 @@ export class OcrService extends BaseService {
+-    await this.assetRepository.upsertJobStatus({ assetId: id, ocrAt: new Date() });
++    if (cloud.status !== 'keep') {
++      const ocrResults =
++        cloud.status === 'cloud'
++          ? cloud.ocr
++          : await this.machineLearningRepository.ocr(asset.previewFile, machineLearning.ocr);
++      const { ocrDataList, searchText } = this.parseOcrResults(id, ocrResults);
++      await this.ocrRepository.upsert(id, ocrDataList, searchText);
++      this.logger.debug(`Processed ${ocrResults.text.length} OCR result(s) for ${id}`);
++    }
+ 
+-    this.logger.debug(`Processed ${ocrResults.text.length} OCR result(s) for ${id}`);
++    await this.assetRepository.upsertJobStatus({ assetId: id, ocrAt: new Date() });
      return JobStatus.Success;
    }
  
 +  /**
 +   * Custom build: ask the cloud OCR gateway (IMMICH_CLOUD_OCR_URL) to read the original photo first. The gateway
-+   * keeps the monthly free quota and returns the result in the same shape, or declines. On decline, timeout or any
-+   * error this returns undefined and the local machine learning OCR reads the preview instead.
++   * keeps the monthly free quota and answers with the result in the same shape (cloud), keep (no text worth reading:
++   * leave the stored OCR as it is) or local (the local machine learning OCR reads the preview). A timeout, an error or a
++   * broken answer is unavailable: the job fails without the local OCR. Without the gateway settings the local OCR reads.
 +   */
-+  private async readWithCloudOcr(id: string): Promise<OCR | undefined> {
++  private async askCloudOcr(id: string): Promise<CloudOcrAnswer> {
 +    const url = process.env.IMMICH_CLOUD_OCR_URL;
 +    const token = process.env.IMMICH_CLOUD_OCR_TOKEN;
 +    if (!url || !token) {
-+      return undefined;
++      return { status: 'local' };
 +    }
 +
 +    try {
@@ -112,27 +154,33 @@ index c91524e..57e272c 100644
 +        signal: AbortSignal.timeout(Number(process.env.IMMICH_CLOUD_OCR_TIMEOUT_MS || 180_000)),
 +      });
 +      if (!response.ok) {
-+        this.logger.warn(`Cloud OCR gateway returned HTTP ${response.status} for ${id}; using local OCR`);
-+        return undefined;
++        this.logger.warn(`Cloud OCR gateway returned HTTP ${response.status} for ${id}; retrying later`);
++        return { status: 'unavailable' };
 +      }
 +      const body = (await response.json()) as { status?: string; reason?: string; ocr?: OCR };
 +      if (body.status === 'cloud' && isOcrResult(body.ocr)) {
-+        return body.ocr;
++        return { status: 'cloud', ocr: body.ocr };
 +      }
-+      this.logger.debug(`Cloud OCR declined for ${id}: ${body.reason ?? body.status}`);
++      if (body.status === 'keep' || body.status === 'local') {
++        this.logger.debug(`Cloud OCR declined for ${id} (${body.status}): ${body.reason}`);
++        return { status: body.status };
++      }
++      this.logger.warn(`Cloud OCR gateway returned an unexpected answer for ${id}; retrying later`);
 +    } catch (error) {
-+      this.logger.warn(`Cloud OCR gateway failed for ${id}; using local OCR: ${error}`);
++      this.logger.warn(`Cloud OCR gateway failed for ${id}; retrying later: ${error}`);
 +    }
-+    return undefined;
++    return { status: 'unavailable' };
 +  }
 +
    private parseOcrResults(id: string, { box, boxScore, text, textScore }: OCR) {
      const ocrDataList = [];
      const searchTokens = [];
-@@ -80,3 +116,21 @@ export class OcrService extends BaseService {
+@@ -80,3 +129,23 @@ export class OcrService extends BaseService {
      return { ocrDataList, searchText: searchTokens.join(' ') };
    }
  }
++
++type CloudOcrAnswer = { status: 'cloud'; ocr: OCR } | { status: 'keep' | 'local' | 'unavailable' };
 +
 +const isOcrResult = (value: unknown): value is OCR => {
 +  if (!value || typeof value !== 'object') {

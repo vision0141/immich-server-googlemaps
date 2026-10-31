@@ -1,0 +1,605 @@
+diff --git a/i18n/en.json b/i18n/en.json
+index 7efaf48..c4832fb 100644
+--- a/i18n/en.json
++++ b/i18n/en.json
+@@ -465,6 +465,10 @@
+     "transcoding_two_pass_encoding_setting_description": "Transcode in two passes to produce better encoded videos. When max bitrate is enabled (required for it to work with H.264 and HEVC), this mode uses a bitrate range based on the max bitrate and ignores CRF. For VP9, CRF can be used if max bitrate is disabled.",
+     "transcoding_video_codec": "Video codec",
+     "transcoding_video_codec_description": "VP9 has high efficiency and web compatibility, but takes longer to transcode. HEVC performs similarly, but has lower web compatibility. H.264 is widely compatible and quick to transcode, but produces much larger files. AV1 is the most efficient codec but lacks support on older devices.",
++    "trash_edited_upload_previous": "Previous version of photos edited on the phone",
++    "trash_edited_upload_previous_description": "When the mobile app uploads a photo edited on the phone again, either stack it with the previous version (default) or move the previous version to trash. Albums, shared links, favorite, archive, tags and the sidecar are copied to the edited version first. Applies to all users.",
++    "trash_edited_upload_previous_stack": "Stack (default)",
++    "trash_edited_upload_previous_trash": "Move the previous version to trash",
+     "trash_enabled_description": "Enable Trash features",
+     "trash_number_of_days": "Number of days",
+     "trash_number_of_days_description": "Number of days to keep the assets in trash before permanently removing them",
+diff --git a/i18n/ja.json b/i18n/ja.json
+index 5486b6e..c8f3456 100644
+--- a/i18n/ja.json
++++ b/i18n/ja.json
+@@ -464,6 +464,10 @@
+     "transcoding_two_pass_encoding_setting_description": "二つのパスで変換し、よりよくエンコードされた動画を生成します。最大ビットレートが有効になっている場合（H.264とHEVCで動作するために必要）、このモードでは最大ビットレートを基にしたビットレートの範囲を使用し、CRF値を無視します。VP9については最大ビットレートの無効時にCRF値を使用できます。",
+     "transcoding_video_codec": "動画コーデック",
+     "transcoding_video_codec_description": "VP9 は高い効率とWeb 互換性を持ちますが、変換に時間がかかります。 HEVC も同様ですが、Web 互換性が低くなります。 H.264 は幅広い互換性があり変換が高速ですが、生成されるファイルははるかに大きくなります。 AV1 は最も効率的なコーデックですが、古い端末は対応していません。",
++    "trash_edited_upload_previous": "スマホで編集した写真の前の版",
++    "trash_edited_upload_previous_description": "スマホアプリが端末で編集した写真を再アップロードした時、前の版と重ねる(標準)か、前の版をごみ箱へ移すか。ごみ箱へ移す前に、アルバム、共有リンク、お気に入り、アーカイブ、タグ、sidecar(Immichで直した説明文、日時、場所、評価)を編集版へ写す。全利用者に効く。",
++    "trash_edited_upload_previous_stack": "重ねる(標準)",
++    "trash_edited_upload_previous_trash": "前の版をごみ箱へ",
+     "trash_enabled_description": "ごみ箱機能を有効化",
+     "trash_number_of_days": "日数",
+     "trash_number_of_days_description": "項目を完全に削除する前にごみ箱に保管しておく日数",
+diff --git a/open-api/immich-openapi-specs.json b/open-api/immich-openapi-specs.json
+index 52e3820..f137768 100644
+--- a/open-api/immich-openapi-specs.json
++++ b/open-api/immich-openapi-specs.json
+@@ -19707,6 +19707,9 @@
+             "minimum": 0,
+             "type": "integer"
+           },
++          "editedUploadPrevious": {
++            "$ref": "#/components/schemas/EditedUploadPrevious"
++          },
+           "enabled": {
+             "description": "Enabled",
+             "type": "boolean"
+@@ -19714,6 +19717,7 @@
+         },
+         "required": [
+           "days",
++          "editedUploadPrevious",
+           "enabled"
+         ],
+         "type": "object"
+@@ -22319,6 +22323,14 @@
+         ],
+         "type": "object"
+       },
++      "EditedUploadPrevious": {
++        "description": "Previous version of a photo edited on the phone and uploaded again: stack or move to trash",
++        "enum": [
++          "stack",
++          "trash"
++        ],
++        "type": "string"
++      },
+       "EmailNotificationsResponse": {
+         "properties": {
+           "albumInvite": {
+diff --git a/packages/sdk/src/fetch-client.ts b/packages/sdk/src/fetch-client.ts
+index 0db0a19..d66b017 100644
+--- a/packages/sdk/src/fetch-client.ts
++++ b/packages/sdk/src/fetch-client.ts
+@@ -399,6 +399,8 @@ export type AdminConfigThemeDto = {
+ export type AdminConfigTrashDto = {
+     /** Days */
+     days: number;
++    /** Previous version of a photo edited on the phone and uploaded again: stack or move to trash */
++    editedUploadPrevious: EditedUploadPrevious;
+     /** Enabled */
+     enabled: boolean;
+ };
+@@ -8038,6 +8040,10 @@ export enum LogLevel {
+     Error = "error",
+     Fatal = "fatal"
+ }
++export enum EditedUploadPrevious {
++    Stack = "stack",
++    Trash = "trash"
++}
+ export enum ReleaseChannel {
+     Stable = "stable",
+     ReleaseCandidate = "releaseCandidate"
+diff --git a/server/src/dtos/config.dto.spec.ts b/server/src/dtos/config.dto.spec.ts
+index cfa879d..553b1f4 100644
+--- a/server/src/dtos/config.dto.spec.ts
++++ b/server/src/dtos/config.dto.spec.ts
+@@ -67,7 +67,6 @@ describe('config visibility', () => {
+   });
+ });
+ 
+-
+ describe('original image preview resolution', () => {
+   it.each([0, 1080])('should accept preview size %s', (size) => {
+     const config = { ...defaults, image: { ...defaults.image, preview: { ...defaults.image.preview, size } } };
+@@ -84,3 +83,19 @@ describe('original image preview resolution', () => {
+     expect(AdminConfigDto.schema.safeParse(config).success).toBe(false);
+   });
+ });
++
++describe('edited upload previous version', () => {
++  it('should default to stack', () => {
++    expect(defaults.trash.editedUploadPrevious).toBe('stack');
++  });
++
++  it.each(['stack', 'trash'])('should accept %s', (editedUploadPrevious) => {
++    const config = { ...defaults, trash: { ...defaults.trash, editedUploadPrevious } };
++    expect(AdminConfigDto.schema.safeParse(config).success).toBe(true);
++  });
++
++  it.each(['locked', ''])('should reject %j', (editedUploadPrevious) => {
++    const config = { ...defaults, trash: { ...defaults.trash, editedUploadPrevious } };
++    expect(AdminConfigDto.schema.safeParse(config).success).toBe(false);
++  });
++});
+diff --git a/server/src/dtos/config.dto.ts b/server/src/dtos/config.dto.ts
+index 894c245..2e9d4e4 100644
+--- a/server/src/dtos/config.dto.ts
++++ b/server/src/dtos/config.dto.ts
+@@ -35,6 +35,11 @@ import {
+ 
+ const { Admin, User, Public } = ConfigVisibility;
+ 
++export enum EditedUploadPrevious {
++  Stack = 'stack',
++  Trash = 'trash',
++}
++
+ const configBool = z
+   .preprocess(
+     (val) => z.stringbool({ truthy: ['true'], falsy: ['false'], case: 'sensitive' }).safeParse(val).data ?? val,
+@@ -372,6 +377,10 @@ const AdminConfigSchemaWithVisibility = z
+       .object({
+         enabled: configBool.describe('Enabled').meta({ visibility: User }),
+         days: z.int().min(0).describe('Days').meta({ visibility: User }),
++        editedUploadPrevious: z
++          .enum(EditedUploadPrevious)
++          .describe('Previous version of a photo edited on the phone and uploaded again: stack or move to trash')
++          .meta({ id: 'EditedUploadPrevious' }),
+       })
+       .meta({ id: 'AdminConfigTrashDto' }),
+     theme: z
+@@ -731,6 +740,7 @@ export const defaults = Object.freeze<SystemConfig>({
+   trash: {
+     enabled: true,
+     days: 30,
++    editedUploadPrevious: EditedUploadPrevious.Stack,
+   },
+   theme: {
+     customCss: '',
+diff --git a/server/src/repositories/stack.repository.ts b/server/src/repositories/stack.repository.ts
+index 7bb834c..f2fff29 100644
+--- a/server/src/repositories/stack.repository.ts
++++ b/server/src/repositories/stack.repository.ts
+@@ -6,7 +6,7 @@ import { columns } from 'src/database.js';
+ import { DummyValue, GenerateSql } from 'src/decorators.js';
+ import { DB } from 'src/schema/index.js';
+ import { StackTable } from 'src/schema/tables/stack.table.js';
+-import { asUuid, withDefaultVisibility } from 'src/utils/database.js';
++import { anyUuid, asUuid, withDefaultVisibility, withFiles } from 'src/utils/database.js';
+ 
+ export interface StackSearch {
+   ownerId: string;
+@@ -164,6 +164,34 @@ export class StackRepository {
+       .executeTakeFirst();
+   }
+ 
++  /** 編集版の自動重ねを置き換えるかの判定と、前の版の情報のコピーに使う列 */
++  getForEditedUploadReplacement(ids: string[]) {
++    return this.db
++      .selectFrom('asset')
++      .select([
++        'asset.id',
++        'asset.ownerId',
++        'asset.libraryId',
++        'asset.type',
++        'asset.stackId',
++        'asset.deletedAt',
++        'asset.visibility',
++        'asset.isFavorite',
++        'asset.originalFileName',
++        'asset.originalPath',
++        'asset.fileCreatedAt',
++        'asset.createdAt',
++      ])
++      .select(withFiles)
++      .select((eb) =>
++        jsonArrayFrom(
++          eb.selectFrom('tag_asset').select('tag_asset.tagId').whereRef('tag_asset.assetId', '=', 'asset.id'),
++        ).as('tags'),
++      )
++      .where('asset.id', '=', anyUuid(ids))
++      .execute();
++  }
++
+   @GenerateSql({ params: [{ sourceId: DummyValue.UUID, targetId: DummyValue.UUID }] })
+   merge({ sourceId, targetId }: { sourceId: string; targetId: string }) {
+     return this.db.updateTable('asset').set({ stackId: targetId }).where('asset.stackId', '=', sourceId).execute();
+diff --git a/server/src/services/stack.service.spec.ts b/server/src/services/stack.service.spec.ts
+index d76e0df..c2f43b6 100644
+--- a/server/src/services/stack.service.spec.ts
++++ b/server/src/services/stack.service.spec.ts
+@@ -1,4 +1,6 @@
+-import { BadRequestException } from '@nestjs/common';
++import { BadRequestException, ConflictException } from '@nestjs/common';
++import { EditedUploadPrevious } from 'src/dtos/config.dto.js';
++import { AssetFileType, AssetStatus, AssetType, AssetVisibility, JobName } from 'src/enum.js';
+ import { StackService } from 'src/services/stack.service.js';
+ import { AssetFactory } from 'test/factories/asset.factory.js';
+ import { AuthFactory } from 'test/factories/auth.factory.js';
+@@ -275,4 +277,198 @@ describe(StackService.name, () => {
+       });
+     });
+   });
++
++  describe('create (edited upload replacement)', () => {
++    const now = Date.now();
++    const editedUploadAsset = (overrides: Record<string, unknown> = {}) => ({
++      id: newUuid(),
++      ownerId: authStub.user1.user.id,
++      libraryId: null,
++      type: AssetType.Image,
++      stackId: null,
++      deletedAt: null,
++      visibility: AssetVisibility.Timeline,
++      isFavorite: false,
++      originalFileName: 'IMG_2059.HEIC',
++      originalPath: '/data/upload/IMG_2059.HEIC',
++      fileCreatedAt: new Date('2026-10-31T11:11:00.000Z'),
++      createdAt: new Date(now - 60 * 60 * 1000),
++      files: [] as { id: string; path: string; type: AssetFileType; isEdited: boolean; isProgressive: boolean }[],
++      tags: [] as { tagId: string }[],
++      ...overrides,
++    });
++
++    const setup = (
++      editedOverrides: Record<string, unknown> = {},
++      previousOverrides: Record<string, unknown> = {},
++      editedUploadPrevious = EditedUploadPrevious.Trash,
++    ) => {
++      const previous = editedUploadAsset(previousOverrides);
++      const edited = editedUploadAsset({
++        originalFileName: 'IMG_2059.heic',
++        originalPath: '/data/upload/IMG_2059+1.heic',
++        createdAt: new Date(now - 60 * 1000),
++        ...editedOverrides,
++      });
++      mocks.systemMetadata.get.mockResolvedValue({ trash: { editedUploadPrevious } });
++      mocks.access.asset.checkOwnerAccess.mockImplementation((_, ids) => Promise.resolve(new Set(ids)));
++      mocks.stack.getForEditedUploadReplacement.mockResolvedValue([previous, edited] as any);
++      const stack = StackFactory.from()
++        .primaryAsset(AssetFactory.from({ id: edited.id }).exif().build(), (builder) => builder.exif())
++        .asset(AssetFactory.from({ id: previous.id }).exif().build(), (builder) => builder.exif())
++        .build();
++      mocks.stack.create.mockResolvedValue(getForStack(stack));
++      mocks.album.copyAlbums.mockResolvedValue([] as any);
++      mocks.sharedLinkAsset.copySharedLinks.mockResolvedValue([] as any);
++      mocks.tag.upsertAssetIds.mockResolvedValue([]);
++      mocks.asset.update.mockResolvedValue(void 0 as any);
++      mocks.asset.updateAll.mockResolvedValue();
++      mocks.asset.upsertFile.mockResolvedValue();
++      return { edited, previous };
++    };
++
++    it('should move the previous version to trash and copy its info instead of stacking', async () => {
++      const tagId = newUuid();
++      const { edited, previous } = setup(
++        {},
++        {
++          isFavorite: true,
++          visibility: AssetVisibility.Archive,
++          tags: [{ tagId }],
++          files: [
++            {
++              id: newUuid(),
++              path: '/data/upload/IMG_2059.HEIC.xmp',
++              type: AssetFileType.Sidecar,
++              isEdited: false,
++              isProgressive: false,
++            },
++          ],
++        },
++      );
++
++      await expect(sut.create(authStub.user1, { assetIds: [edited.id, previous.id] })).rejects.toBeInstanceOf(
++        ConflictException,
++      );
++
++      expect(mocks.stack.create).not.toHaveBeenCalled();
++      expect(mocks.album.copyAlbums).toHaveBeenCalledWith({ sourceAssetId: previous.id, targetAssetId: edited.id });
++      expect(mocks.sharedLinkAsset.copySharedLinks).toHaveBeenCalledWith({
++        sourceAssetId: previous.id,
++        targetAssetId: edited.id,
++      });
++      expect(mocks.tag.upsertAssetIds).toHaveBeenCalledWith([{ assetId: edited.id, tagId }]);
++      expect(mocks.asset.update).toHaveBeenCalledWith({
++        id: edited.id,
++        isFavorite: true,
++        visibility: AssetVisibility.Archive,
++      });
++      expect(mocks.storage.copyFile).toHaveBeenCalledWith(
++        '/data/upload/IMG_2059.HEIC.xmp',
++        '/data/upload/IMG_2059+1.heic.xmp',
++      );
++      expect(mocks.asset.upsertFile).toHaveBeenCalledWith({
++        assetId: edited.id,
++        path: '/data/upload/IMG_2059+1.heic.xmp',
++        type: AssetFileType.Sidecar,
++      });
++      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.AssetExtractMetadata, data: { id: edited.id } });
++      expect(mocks.asset.updateAll).toHaveBeenCalledWith([previous.id], {
++        deletedAt: expect.any(Date),
++        status: AssetStatus.Trashed,
++      });
++      expect(mocks.event.emit).toHaveBeenCalledWith('AssetTrashAll', {
++        assetIds: [previous.id],
++        userId: authStub.user1.user.id,
++      });
++    });
++
++    it('should not copy a sidecar when the previous version has none', async () => {
++      const { edited, previous } = setup();
++
++      await expect(sut.create(authStub.user1, { assetIds: [edited.id, previous.id] })).rejects.toBeInstanceOf(
++        ConflictException,
++      );
++
++      expect(mocks.storage.copyFile).not.toHaveBeenCalled();
++      expect(mocks.job.queue).not.toHaveBeenCalled();
++      expect(mocks.asset.updateAll).toHaveBeenCalled();
++    });
++
++    it('should stack when the setting is the default', async () => {
++      const { edited, previous } = setup({}, {}, EditedUploadPrevious.Stack);
++      await expect(sut.create(authStub.user1, { assetIds: [edited.id, previous.id] })).resolves.toBeDefined();
++      expect(mocks.stack.create).toHaveBeenCalled();
++      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
++      expect(mocks.stack.getForEditedUploadReplacement).not.toHaveBeenCalled();
++    });
++
++    it('should stack when trash is disabled', async () => {
++      const { edited, previous } = setup();
++      mocks.systemMetadata.get.mockResolvedValue({
++        trash: { enabled: false, editedUploadPrevious: EditedUploadPrevious.Trash },
++      });
++      await expect(sut.create(authStub.user1, { assetIds: [edited.id, previous.id] })).resolves.toBeDefined();
++      expect(mocks.stack.create).toHaveBeenCalled();
++      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
++    });
++
++    it('should stack more than two assets', async () => {
++      const { edited, previous } = setup();
++      const other = newUuid();
++
++      await expect(sut.create(authStub.user1, { assetIds: [edited.id, previous.id, other] })).resolves.toBeDefined();
++      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
++    });
++
++    it.each([
++      ['the previous version is already stacked', {}, { stackId: newUuid() }],
++      ['the edited version is already stacked', { stackId: newUuid() }, {}],
++      ['the previous version is locked', {}, { visibility: AssetVisibility.Locked }],
++      ['the edited version is archived', { visibility: AssetVisibility.Archive }, {}],
++      ['the file names differ', { originalFileName: 'IMG_2060.heic' }, {}],
++      ['the capture times differ', { fileCreatedAt: new Date('2026-10-31T11:11:01.000Z') }, {}],
++      ['the first asset is older', { createdAt: new Date(now - 2 * 60 * 60 * 1000) }, {}],
++      [
++        'the edited version was uploaded long ago',
++        { createdAt: new Date(now - 25 * 60 * 60 * 1000) },
++        {
++          createdAt: new Date(now - 26 * 60 * 60 * 1000),
++        },
++      ],
++      ['the types differ', { type: AssetType.Video }, {}],
++      ['the owners differ', { ownerId: newUuid() }, {}],
++      ['an asset is in an external library', {}, { libraryId: newUuid() }],
++    ])('should stack when %s', async (_, editedOverrides, previousOverrides) => {
++      const { edited, previous } = setup(editedOverrides, previousOverrides);
++      await expect(sut.create(authStub.user1, { assetIds: [edited.id, previous.id] })).resolves.toBeDefined();
++      expect(mocks.stack.create).toHaveBeenCalled();
++      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
++    });
++
++    it.each([
++      ['previous', {}, { deletedAt: new Date() }],
++      ['edited', { deletedAt: new Date() }, {}],
++    ])(
++      'should neither stack nor trash when the %s asset is in trash',
++      async (_, editedOverrides, previousOverrides) => {
++        const { edited, previous } = setup(editedOverrides, previousOverrides);
++
++        await expect(sut.create(authStub.user1, { assetIds: [edited.id, previous.id] })).rejects.toBeInstanceOf(
++          BadRequestException,
++        );
++
++        expect(mocks.stack.create).not.toHaveBeenCalled();
++        expect(mocks.asset.updateAll).not.toHaveBeenCalled();
++      },
++    );
++
++    it('should treat a +number suffix and extension case as the same name', async () => {
++      const { edited, previous } = setup({ originalFileName: 'img_2059+2.JPG' });
++
++      await expect(sut.create(authStub.user1, { assetIds: [edited.id, previous.id] })).rejects.toBeInstanceOf(
++        ConflictException,
++      );
++    });
++  });
+ });
+diff --git a/server/src/services/stack.service.ts b/server/src/services/stack.service.ts
+index 5e16e16..30129e2 100644
+--- a/server/src/services/stack.service.ts
++++ b/server/src/services/stack.service.ts
+@@ -1,12 +1,27 @@
+-import { BadRequestException, Injectable } from '@nestjs/common';
++import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
++import { parse } from 'node:path';
+ import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
+ import { AuthDto } from 'src/dtos/auth.dto.js';
++import { EditedUploadPrevious } from 'src/dtos/config.dto.js';
+ import { StackCreateDto, StackResponseDto, StackSearchDto, StackUpdateDto, mapStack } from 'src/dtos/stack.dto.js';
+-import { Permission } from 'src/enum.js';
++import { AssetFileType, AssetStatus, AssetVisibility, JobName, Permission } from 'src/enum.js';
++import { StackRepository } from 'src/repositories/stack.repository.js';
+ import { BaseService } from 'src/services/base.service.js';
++import { getAssetFiles } from 'src/utils/asset.util.js';
+ import { findOrFail } from 'src/utils/misc.js';
+ import { UUIDAssetIDParamDto } from 'src/validation.js';
+ 
++type EditedUploadAsset = Awaited<ReturnType<StackRepository['getForEditedUploadReplacement']>>[number];
++
++/** アプリは編集版のアップロード直後に重ねを頼むが、iOSの裏の送信は完了の通知が遅れる事がある */
++const EDITED_UPLOAD_MAX_AGE_MS = 24 * 60 * 60 * 1000;
++
++/** IMG_2059.HEIC、IMG_2059.heic、IMG_2059+1.heic → img_2059 */
++const getEditedUploadBaseName = (originalFileName: string) =>
++  parse(originalFileName)
++    .name.replace(/\+\d+$/, '')
++    .toLowerCase();
++
+ @Injectable()
+ export class StackService extends BaseService {
+   async search(auth: AuthDto, dto: StackSearchDto): Promise<StackResponseDto[]> {
+@@ -21,6 +36,11 @@ export class StackService extends BaseService {
+   async create(auth: AuthDto, dto: StackCreateDto): Promise<StackResponseDto> {
+     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: dto.assetIds });
+ 
++    if (await this.replaceEditedUpload(auth, dto.assetIds)) {
++      // 重ねは作っていない。アプリはこの失敗を警告の記録だけにして続ける
++      throw new ConflictException('Previous version of the edited upload was moved to trash instead of stacking');
++    }
++
+     const stack = await this.stackRepository.create({ ownerId: auth.user.id }, dto.assetIds);
+ 
+     await this.eventRepository.emit('StackCreate', { stackId: stack.id, userId: auth.user.id });
+@@ -78,6 +98,87 @@ export class StackService extends BaseService {
+     await this.eventRepository.emit('StackUpdate', { stackId, userId: auth.user.id });
+   }
+ 
++  /**
++   * スマホアプリが編集版を再アップロードした後の重ね依頼([新, 前の版])なら、前の版の情報を新へ写して前の版をゴミ箱へ移す。
++   * 設定が既定(重ねる)の時、又は手で重ねる操作等で条件に合わない時はfalse(標準の重ね)。ゴミ箱のassetを含む2件の依頼は断る。
++   */
++  private async replaceEditedUpload(auth: AuthDto, assetIds: string[]): Promise<boolean> {
++    if (assetIds.length !== 2 || assetIds[0] === assetIds[1]) {
++      return false;
++    }
++
++    const { trash } = await this.getConfig({ withCache: false });
++    if (!trash.enabled || trash.editedUploadPrevious !== EditedUploadPrevious.Trash) {
++      return false;
++    }
++
++    const assets = await this.stackRepository.getForEditedUploadReplacement(assetIds);
++    if (assets.some(({ deletedAt }) => deletedAt)) {
++      // iPhoneの「元に戻す」で、ゴミ箱へ移した前の版と同じ中身が重複として返った時等。重ねるとゴミ箱の版が代表になり編集版が見えなくなる
++      throw new BadRequestException('Cannot stack an asset in trash');
++    }
++
++    const edited = assets.find(({ id }) => id === assetIds[0]);
++    const previous = assets.find(({ id }) => id === assetIds[1]);
++    if (!edited || !previous || !this.isEditedUploadPair(auth, edited, previous)) {
++      return false;
++    }
++
++    await this.requireAccess({ auth, permission: Permission.AssetDelete, ids: [previous.id] });
++
++    await this.albumRepository.copyAlbums({ sourceAssetId: previous.id, targetAssetId: edited.id });
++    await this.sharedLinkAssetRepository.copySharedLinks({ sourceAssetId: previous.id, targetAssetId: edited.id });
++    await this.tagRepository.upsertAssetIds(previous.tags.map(({ tagId }) => ({ assetId: edited.id, tagId })));
++    await this.assetRepository.update({
++      id: edited.id,
++      isFavorite: previous.isFavorite,
++      visibility: previous.visibility,
++    });
++    await this.copyEditedUploadSidecar(previous, edited);
++
++    await this.assetRepository.updateAll([previous.id], { deletedAt: new Date(), status: AssetStatus.Trashed });
++    await this.eventRepository.emit('AssetTrashAll', { assetIds: [previous.id], userId: auth.user.id });
++
++    this.logger.log(`Moved previous version ${previous.id} of edited upload ${edited.id} to trash instead of stacking`);
++    return true;
++  }
++
++  private isEditedUploadPair(auth: AuthDto, edited: EditedUploadAsset, previous: EditedUploadAsset) {
++    return (
++      edited.ownerId === auth.user.id &&
++      previous.ownerId === auth.user.id &&
++      !edited.libraryId &&
++      !previous.libraryId &&
++      edited.type === previous.type &&
++      !edited.stackId &&
++      !previous.stackId &&
++      edited.visibility === AssetVisibility.Timeline &&
++      (previous.visibility === AssetVisibility.Timeline || previous.visibility === AssetVisibility.Archive) &&
++      edited.fileCreatedAt.getTime() === previous.fileCreatedAt.getTime() &&
++      getEditedUploadBaseName(edited.originalFileName) === getEditedUploadBaseName(previous.originalFileName) &&
++      edited.createdAt > previous.createdAt &&
++      Date.now() - edited.createdAt.getTime() <= EDITED_UPLOAD_MAX_AGE_MS
++    );
++  }
++
++  /** 前の版のsidecar(Immichで直した説明文、日時、場所、評価、タグ)を新へ写し、新のメタデータを読み直させる */
++  private async copyEditedUploadSidecar(previous: EditedUploadAsset, edited: EditedUploadAsset) {
++    const { sidecarFile: previousSidecar } = getAssetFiles(previous.files);
++    if (!previousSidecar?.path) {
++      return;
++    }
++
++    const { sidecarFile: editedSidecar } = getAssetFiles(edited.files);
++    if (editedSidecar?.path) {
++      await this.storageRepository.unlink(editedSidecar.path);
++    }
++
++    const path = `${edited.originalPath}.xmp`;
++    await this.storageRepository.copyFile(previousSidecar.path, path);
++    await this.assetRepository.upsertFile({ assetId: edited.id, path, type: AssetFileType.Sidecar });
++    await this.jobRepository.queue({ name: JobName.AssetExtractMetadata, data: { id: edited.id } });
++  }
++
+   private findOrFail(id: string) {
+     return findOrFail(() => this.stackRepository.getById(id), 'Asset stack');
+   }
+diff --git a/server/src/services/system-config.service.spec.ts b/server/src/services/system-config.service.spec.ts
+index 6735f82..0c222a2 100644
+--- a/server/src/services/system-config.service.spec.ts
++++ b/server/src/services/system-config.service.spec.ts
+@@ -1,6 +1,6 @@
+ import { BadRequestException } from '@nestjs/common';
+ import type { DeepPartial } from 'src/types.js';
+-import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
++import { EditedUploadPrevious, SystemConfig, defaults } from 'src/dtos/config.dto.js';
+ import {
+   AudioCodec,
+   CQMode,
+@@ -214,6 +214,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
+   trash: {
+     enabled: true,
+     days: 10,
++    editedUploadPrevious: EditedUploadPrevious.Stack,
+   },
+   theme: {
+     customCss: '',
+diff --git a/web/src/routes/admin/system-settings/TrashSettings.svelte b/web/src/routes/admin/system-settings/TrashSettings.svelte
+index 6829d84..f08c776 100644
+--- a/web/src/routes/admin/system-settings/TrashSettings.svelte
++++ b/web/src/routes/admin/system-settings/TrashSettings.svelte
+@@ -7,6 +7,8 @@
+   import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
+   import { t } from 'svelte-i18n';
+   import { fade } from 'svelte/transition';
++  import SettingSelect from './SettingSelect.svelte';
++  import { EditedUploadPrevious } from '@immich/sdk';
+ 
+   const disabled = $derived(featureFlagsManager.value.configFile);
+   const config = $derived(systemConfigManager.value);
+@@ -35,6 +37,20 @@
+           isEdited={configToEdit.trash.days !== config.trash.days}
+         />
+ 
++        <hr />
++
++        <SettingSelect
++          label={$t('admin.trash_edited_upload_previous')}
++          desc={$t('admin.trash_edited_upload_previous_description')}
++          bind:value={configToEdit.trash.editedUploadPrevious}
++          options={[
++            { value: EditedUploadPrevious.Stack, text: $t('admin.trash_edited_upload_previous_stack') },
++            { value: EditedUploadPrevious.Trash, text: $t('admin.trash_edited_upload_previous_trash') },
++          ]}
++          isEdited={configToEdit.trash.editedUploadPrevious !== config.trash.editedUploadPrevious}
++          disabled={disabled || !configToEdit.trash.enabled}
++        />
++
+         <SettingButtonsRow bind:configToEdit keys={['trash']} {disabled} />
+       </div>
+     </form>

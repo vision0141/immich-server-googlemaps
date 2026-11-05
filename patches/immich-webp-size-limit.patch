@@ -1,0 +1,89 @@
+diff --git a/server/src/repositories/media.repository.spec.ts b/server/src/repositories/media.repository.spec.ts
+index fad6201..2dfe3ea 100644
+--- a/server/src/repositories/media.repository.spec.ts
++++ b/server/src/repositories/media.repository.spec.ts
+@@ -337,5 +337,46 @@ describe(MediaRepository.name, () => {
+ 
+       expect(statSync(file).blksize).toBeGreaterThan(0);
+     });
++
++    it('should fit a very tall webp preview within the webp size limit', async () => {
++      const decoded = await sut.decodeImage(
++        await sharp({ create: { width: 786, height: 17_908, channels: 3, background: '#808080' } })
++          .png()
++          .toBuffer(),
++        { colorspace: Colorspace.Srgb, processInvalidImages: false },
++      );
++      const dir = mkdtempDisposableSync(join(tmpdir(), 'media-repository-'));
++      const file = join(dir.path, 'preview.webp');
++
++      await sut.generateThumbnail(
++        decoded,
++        { colorspace: Colorspace.Srgb, quality: 80, format: ImageFormat.Webp, size: 2160, processInvalidImages: false },
++        file,
++      );
++
++      const { width, height } = await sharp(file).metadata();
++      expect(height).toBe(16_383);
++      expect(width).toBe(Math.round((786 * 16_383) / 17_908));
++    });
++
++    it('should keep the full size of a very tall jpeg preview', async () => {
++      const decoded = await sut.decodeImage(
++        await sharp({ create: { width: 786, height: 17_908, channels: 3, background: '#808080' } })
++          .png()
++          .toBuffer(),
++        { colorspace: Colorspace.Srgb, processInvalidImages: false },
++      );
++      const dir = mkdtempDisposableSync(join(tmpdir(), 'media-repository-'));
++      const file = join(dir.path, 'preview.jpeg');
++
++      await sut.generateThumbnail(
++        decoded,
++        { colorspace: Colorspace.Srgb, quality: 80, format: ImageFormat.Jpeg, size: 2160, processInvalidImages: false },
++        file,
++      );
++
++      const { width, height } = await sharp(file).metadata();
++      expect({ width, height }).toEqual({ width: 786, height: 17_908 });
++    });
+   });
+ });
+diff --git a/server/src/repositories/media.repository.ts b/server/src/repositories/media.repository.ts
+index 9057087..45b694d 100644
+--- a/server/src/repositories/media.repository.ts
++++ b/server/src/repositories/media.repository.ts
+@@ -33,6 +33,7 @@ import {
+   DvSignalCompatibility,
+   H264Profile,
+   HevcProfile,
++  ImageFormat,
+   LogLevel,
+   RawExtractedFormat,
+ } from 'src/enum.js';
+@@ -46,6 +47,9 @@ const probe = (input: string, options: string[]): Promise<FfprobeData> =>
+     ffmpeg.ffprobe(input, options, (error, data) => (error ? reject(error) : resolve(data))),
+   );
+ 
++// WebPの仕様上の縦横の上限
++const WEBP_MAX_DIMENSION = 16_383;
++
+ const pascalCase = (str: string) => upperFirst(camelCase(str.toLowerCase()));
+ 
+ type ProgressEvent = {
+@@ -179,7 +183,14 @@ export class MediaRepository {
+   }
+ 
+   async generateThumbnail(image: Bitmap, options: GenerateThumbnailOptions, output: string): Promise<void> {
+-    const transformed = await this.transform(image, options);
++    let transformed = await this.transform(image, options);
++    // 細長い画像(長いスクリーンショット等)は短辺基準の縮小でもWebPの上限を超え、書出しが失敗する
++    if (
++      options.format === ImageFormat.Webp &&
++      Math.max(transformed.info.width, transformed.info.height) > WEBP_MAX_DIMENSION
++    ) {
++      transformed = await this.transform(transformed, { size: WEBP_MAX_DIMENSION, fit: 'inside' });
++    }
+     await this.tag(transformed, options.colorspace)
+       .toFormat(options.format, {
+         quality: options.quality,

@@ -16,6 +16,7 @@
 - OCRは、まずクラウドOCR窓口(`IMMICH_CLOUD_OCR_URL`、`IMMICH_CLOUD_OCR_TOKEN`)へassetIdを送り、窓口がImmichと同じ形の結果を返したらそれを保存する(MLのOCRは呼ばない)。窓口の答えが `keep`(読む価値のある文字が無い、月の無料枠の上限など)なら保存済みのOCRを変えずにジョブを終え、`local` の時だけMLのOCRで縮小版を読む。失敗した、時間切れ(`IMMICH_CLOUD_OCR_TIMEOUT_MS`、既定180秒)、形の違う答えの時はMLへ退避せずジョブを失敗にする(OCRの済みの印 `ocrAt` が付かないので、窓口が後でOCRキューへ戻す)。環境変数が無ければ従来どおりMLで読む。窓口は自宅環境の `DockerData/cloud-ocr-gateway`(Google Document AI、Cloud Vision、AzureのF0の無料枠の中で読む)
 - アプリ(モバイル)へのOCRの同期(`AssetOcrV1`)に、自分へ共有しているパートナーの写真のOCRも含める。upstreamは自分の写真だけを送るため、パートナーの写真はWebでは枠が出てもアプリでは出ない。範囲はパートナーの資産とexifの同期と同じ(`inTimeline` を問わない)で、アプリの手元のDBの外部キーを満たす。共有アルバムだけで見える写真は、upstreamのアルバムの資産の同期が送る範囲を細かく絞っており、合わせないとアプリの同期が外部キー違反で止まるため含めない。パートナーになる前のOCRは送らないため、既存の端末はOCRの同期の記録(`session_sync_checkpoint` の `AssetOcrV1`)を消して送り直させる(`immich-ocr-partner-sync.patch`)
 - スマホアプリが端末で編集した写真を再アップロードした時に自動で作る重ね(アプリが `POST /api/stacks` へ `[編集版, 前の版]` を送る)を、管理画面「ごみ箱の設定」の「スマホで編集した写真の前の版」で「前の版をごみ箱へ」に替えられる(既定=重ねる、全利用者に効く。ゴミ箱が無効なら重ねる)。置き換えるのは、2件、同じ持ち主、外部ライブラリでない、同じ種類、重ね無し、編集版がタイムライン、前の版がタイムライン又はアーカイブ、`fileCreatedAt` 一致、`originalFileName` の拡張子と末尾の `+数字` を除いた名前が大文字小文字を無視して一致、先頭(編集版)の `createdAt` が新しく24時間以内、の全てを満たす時だけ(手で重ねる操作は通常は名前か日時が違い標準の重ね)。前の版のアルバム、共有リンク、お気に入り、アーカイブ、タグ、sidecar(Immichで直した説明文、日時、場所、評価)を編集版へ写してから前の版をゴミ箱へ移し、409を返す(アプリは警告の記録だけで続ける)。ゴミ箱設定の間、ゴミ箱のassetを含む2件の重ね依頼は400で断る(iPhoneの「元に戻す」で元と同じ中身が重複としてゴミ箱の前の版のidで返った時、重ねるとゴミ箱の版が代表になり編集版が見えなくなるため)。「元に戻す」は通常、アプリが同期でゴミ箱の版の中身を知っているため再アップロード自体が起きない(`immich-stack-edited-upload.patch`)
+- 縦横どちらかが16383pxを超える細長い画像(長いスクリーンショット等)で、WebPの縮小版とプレビューの書出しが「Processed image is too large for the WebP format」で失敗し、写真が灰色のまま、書出し済みの縮小版だけがDBに無いファイルとして残る問題を修正。WebPの時だけ、短辺基準の縮小の後に長辺を16383pxへ収める(JPEGは従来どおり)。upstreamは未修正(issue #9500、#22868)(`immich-webp-size-limit.patch`)
 - WebUI の写真ビューアで元画像ロード後に低解像度レイヤーが残る問題は、v3 upstream 側の新しい `AdaptiveImage` 実装で解消済みのため、旧reraster patchは外しています
 - 回転メタデータ付きの縦動画が `608x1080` のように潰れる問題は、v3.3.0 upstream の `isFrameVertical` 修正で解消済みのため、旧rotated portrait scaling patchは外しています
 
@@ -60,6 +61,7 @@ Watchtower 用の推奨:
 - `server/src/services/ocr.service.ts`、`server/src/services/ocr.service.spec.ts`(`immich-cloud-ocr.patch`)
 - `server/src/repositories/sync.repository.ts`、`server/src/queries/sync.repository.sql`、`server/test/medium/specs/sync/sync-asset-ocr.spec.ts`(`immich-ocr-partner-sync.patch`)
 - `server/src/services/stack.service.ts`、`server/src/repositories/stack.repository.ts`、`server/src/dtos/config.dto.ts`、`web/src/routes/admin/system-settings/TrashSettings.svelte`、`packages/sdk/src/fetch-client.ts`、`open-api/immich-openapi-specs.json`、`i18n/en.json`、`i18n/ja.json`、spec(`immich-stack-edited-upload.patch`)
+- `server/src/repositories/media.repository.ts`、`server/src/repositories/media.repository.spec.ts`(`immich-webp-size-limit.patch`)
 
 変更内容:
 
@@ -69,6 +71,7 @@ Watchtower 用の推奨:
 - リンク表示名 -> `Google Maps`
 - プレビュー解像度の `Original` 選択肢を `0` として保存し、画像では resize 無効、動画では既存の `original` target resolution として扱う
 - `fullsize` 未生成のWeb非対応画像を抽出するとき、`originalFileName` の拡張子判定をcase-insensitiveにする
+- WebPの縮小版とプレビューは長辺16383px(WebPの上限)を超えないよう縮める
 - QSV の `maxBitrate` 指定時は `Auto` で bitrate mode を使う
 - `ICQ` / `CQP` を明示した場合は quality mode を固定する
 - 旧写真ビューアreraster patchはv3では不要なため適用しない
@@ -131,6 +134,7 @@ Current patches include:
 - making fullsize thumbnail jobs pick up web-unsupported images with uppercase filename extensions such as `IMG_3593.HEIC`
 - including OCR of assets shared by partners in the mobile OCR sync (`AssetOcrV1`), using the same scope as partner asset and exif sync; album-only assets are not included
 - adding an admin setting (Trash settings, `trash.editedUploadPrevious`: `stack` (default) / `trash`) that replaces the automatic stack the mobile app creates after re-uploading a photo edited on the phone: the previous version's albums, shared links, favorite, archive, tags and sidecar are copied to the edited version, the previous version is moved to trash and the stack request returns 409. Only a strict edited-upload pair (2 assets, same owner, same `fileCreatedAt`, same file name ignoring extension, case and a `+N` suffix, first asset uploaded later and within 24 hours, not stacked) is replaced; anything else is stacked as usual, except that 2-asset requests containing a trashed asset are rejected with 400 while the setting is `trash` (`immich-stack-edited-upload.patch`)
+- fitting WebP thumbnails and previews within the WebP limit of 16383 px on the long side, so very tall or wide images (long screenshots) no longer fail with `Processed image is too large for the WebP format`; JPEG output is unchanged (`immich-webp-size-limit.patch`)
 - the former WebUI photo-viewer reraster workaround is no longer applied because the v3 upstream `AdaptiveImage` implementation already addresses the stale low-resolution layer behavior
 - the former rotated portrait scaling patch is no longer applied because upstream v3.3.0 fixed it with `isFrameVertical`
 

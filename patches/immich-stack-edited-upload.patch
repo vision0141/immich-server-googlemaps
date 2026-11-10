@@ -1,8 +1,8 @@
 diff --git a/i18n/en.json b/i18n/en.json
-index 7efaf48..c4832fb 100644
+index d598a48..640b878 100644
 --- a/i18n/en.json
 +++ b/i18n/en.json
-@@ -465,6 +465,10 @@
+@@ -477,6 +477,10 @@
      "transcoding_two_pass_encoding_setting_description": "Transcode in two passes to produce better encoded videos. When max bitrate is enabled (required for it to work with H.264 and HEVC), this mode uses a bitrate range based on the max bitrate and ignores CRF. For VP9, CRF can be used if max bitrate is disabled.",
      "transcoding_video_codec": "Video codec",
      "transcoding_video_codec_description": "VP9 has high efficiency and web compatibility, but takes longer to transcode. HEVC performs similarly, but has lower web compatibility. H.264 is widely compatible and quick to transcode, but produces much larger files. AV1 is the most efficient codec but lacks support on older devices.",
@@ -14,25 +14,25 @@ index 7efaf48..c4832fb 100644
      "trash_number_of_days": "Number of days",
      "trash_number_of_days_description": "Number of days to keep the assets in trash before permanently removing them",
 diff --git a/i18n/ja.json b/i18n/ja.json
-index 5486b6e..c8f3456 100644
+index abd46d7..8db3f4e 100644
 --- a/i18n/ja.json
 +++ b/i18n/ja.json
-@@ -464,6 +464,10 @@
+@@ -471,6 +471,10 @@
      "transcoding_two_pass_encoding_setting_description": "二つのパスで変換し、よりよくエンコードされた動画を生成します。最大ビットレートが有効になっている場合（H.264とHEVCで動作するために必要）、このモードでは最大ビットレートを基にしたビットレートの範囲を使用し、CRF値を無視します。VP9については最大ビットレートの無効時にCRF値を使用できます。",
      "transcoding_video_codec": "動画コーデック",
      "transcoding_video_codec_description": "VP9 は高い効率とWeb 互換性を持ちますが、変換に時間がかかります。 HEVC も同様ですが、Web 互換性が低くなります。 H.264 は幅広い互換性があり変換が高速ですが、生成されるファイルははるかに大きくなります。 AV1 は最も効率的なコーデックですが、古い端末は対応していません。",
 +    "trash_edited_upload_previous": "スマホで編集した写真の前の版",
-+    "trash_edited_upload_previous_description": "スマホアプリが端末で編集した写真を再アップロードした時、前の版と重ねる(標準)か、前の版をごみ箱へ移すか。ごみ箱へ移す前に、アルバム、共有リンク、お気に入り、アーカイブ、タグ、sidecar(Immichで直した説明文、日時、場所、評価)を編集版へ写す。全利用者に効く。",
++    "trash_edited_upload_previous_description": "スマホアプリが端末で編集した写真を再アップロードした時、前の版と重ねる(標準)か、前の版をゴミ箱へ移すか。ゴミ箱へ移す前に、アルバム、共有リンク、お気に入り、アーカイブ、タグ、sidecar(Immichで直した説明文、日時、場所、評価)を編集版へ写す。全利用者に効く。",
 +    "trash_edited_upload_previous_stack": "重ねる(標準)",
-+    "trash_edited_upload_previous_trash": "前の版をごみ箱へ",
-     "trash_enabled_description": "ごみ箱機能を有効化",
++    "trash_edited_upload_previous_trash": "前の版をゴミ箱へ",
+     "trash_enabled_description": "ゴミ箱機能を有効化",
      "trash_number_of_days": "日数",
-     "trash_number_of_days_description": "項目を完全に削除する前にごみ箱に保管しておく日数",
+     "trash_number_of_days_description": "項目を完全に削除する前にゴミ箱に保管しておく日数",
 diff --git a/open-api/immich-openapi-specs.json b/open-api/immich-openapi-specs.json
-index 52e3820..f137768 100644
+index 7cf715a..1099f9f 100644
 --- a/open-api/immich-openapi-specs.json
 +++ b/open-api/immich-openapi-specs.json
-@@ -19707,6 +19707,9 @@
+@@ -20130,6 +20130,9 @@
              "minimum": 0,
              "type": "integer"
            },
@@ -42,7 +42,7 @@ index 52e3820..f137768 100644
            "enabled": {
              "description": "Enabled",
              "type": "boolean"
-@@ -19714,6 +19717,7 @@
+@@ -20137,6 +20140,7 @@
          },
          "required": [
            "days",
@@ -50,7 +50,7 @@ index 52e3820..f137768 100644
            "enabled"
          ],
          "type": "object"
-@@ -22319,6 +22323,14 @@
+@@ -22742,6 +22746,14 @@
          ],
          "type": "object"
        },
@@ -66,10 +66,10 @@ index 52e3820..f137768 100644
          "properties": {
            "albumInvite": {
 diff --git a/packages/sdk/src/fetch-client.ts b/packages/sdk/src/fetch-client.ts
-index 0db0a19..d66b017 100644
+index c4e12a2..ce51b5f 100644
 --- a/packages/sdk/src/fetch-client.ts
 +++ b/packages/sdk/src/fetch-client.ts
-@@ -399,6 +399,8 @@ export type AdminConfigThemeDto = {
+@@ -409,6 +409,8 @@ export type AdminConfigThemeDto = {
  export type AdminConfigTrashDto = {
      /** Days */
      days: number;
@@ -78,7 +78,7 @@ index 0db0a19..d66b017 100644
      /** Enabled */
      enabled: boolean;
  };
-@@ -8038,6 +8040,10 @@ export enum LogLevel {
+@@ -8237,6 +8239,10 @@ export enum LogLevel {
      Error = "error",
      Fatal = "fatal"
  }
@@ -90,18 +90,10 @@ index 0db0a19..d66b017 100644
      Stable = "stable",
      ReleaseCandidate = "releaseCandidate"
 diff --git a/server/src/dtos/config.dto.spec.ts b/server/src/dtos/config.dto.spec.ts
-index cfa879d..553b1f4 100644
+index dc1922a..315e5eb 100644
 --- a/server/src/dtos/config.dto.spec.ts
 +++ b/server/src/dtos/config.dto.spec.ts
-@@ -67,7 +67,6 @@ describe('config visibility', () => {
-   });
- });
- 
--
- describe('original image preview resolution', () => {
-   it.each([0, 1080])('should accept preview size %s', (size) => {
-     const config = { ...defaults, image: { ...defaults.image, preview: { ...defaults.image.preview, size } } };
-@@ -84,3 +83,19 @@ describe('original image preview resolution', () => {
+@@ -135,3 +135,19 @@ describe('original image preview resolution', () => {
      expect(AdminConfigDto.schema.safeParse(config).success).toBe(false);
    });
  });
@@ -122,10 +114,10 @@ index cfa879d..553b1f4 100644
 +  });
 +});
 diff --git a/server/src/dtos/config.dto.ts b/server/src/dtos/config.dto.ts
-index 894c245..2e9d4e4 100644
+index afc30a6..69b1ecc 100644
 --- a/server/src/dtos/config.dto.ts
 +++ b/server/src/dtos/config.dto.ts
-@@ -35,6 +35,11 @@ import {
+@@ -35,6 +35,11 @@ import type { DeepPartial } from 'src/types.js';
  
  const { Admin, User, Public } = ConfigVisibility;
  
@@ -137,7 +129,7 @@ index 894c245..2e9d4e4 100644
  const configBool = z
    .preprocess(
      (val) => z.stringbool({ truthy: ['true'], falsy: ['false'], case: 'sensitive' }).safeParse(val).data ?? val,
-@@ -372,6 +377,10 @@ const AdminConfigSchemaWithVisibility = z
+@@ -409,6 +414,10 @@ const AdminConfigSchemaWithVisibility = z
        .object({
          enabled: configBool.describe('Enabled').meta({ visibility: User }),
          days: z.int().min(0).describe('Days').meta({ visibility: User }),
@@ -147,8 +139,8 @@ index 894c245..2e9d4e4 100644
 +          .meta({ id: 'EditedUploadPrevious' }),
        })
        .meta({ id: 'AdminConfigTrashDto' }),
-     theme: z
-@@ -731,6 +740,7 @@ export const defaults = Object.freeze<SystemConfig>({
+     theme: z.object({ customCss: z.string().describe('Custom CSS for theming') }).meta({ id: 'AdminConfigThemeDto' }),
+@@ -777,6 +786,7 @@ export const defaults = Object.freeze<SystemConfig>({
    trash: {
      enabled: true,
      days: 30,
@@ -157,7 +149,7 @@ index 894c245..2e9d4e4 100644
    theme: {
      customCss: '',
 diff --git a/server/src/repositories/stack.repository.ts b/server/src/repositories/stack.repository.ts
-index 7bb834c..f2fff29 100644
+index d374d22..53f5d27 100644
 --- a/server/src/repositories/stack.repository.ts
 +++ b/server/src/repositories/stack.repository.ts
 @@ -6,7 +6,7 @@ import { columns } from 'src/database.js';
@@ -550,18 +542,17 @@ index 5e16e16..30129e2 100644
      return findOrFail(() => this.stackRepository.getById(id), 'Asset stack');
    }
 diff --git a/server/src/services/system-config.service.spec.ts b/server/src/services/system-config.service.spec.ts
-index 6735f82..0c222a2 100644
+index 61b1c49..23c7d7c 100644
 --- a/server/src/services/system-config.service.spec.ts
 +++ b/server/src/services/system-config.service.spec.ts
-@@ -1,6 +1,6 @@
+@@ -1,5 +1,5 @@
  import { BadRequestException } from '@nestjs/common';
- import type { DeepPartial } from 'src/types.js';
 -import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
 +import { EditedUploadPrevious, SystemConfig, defaults } from 'src/dtos/config.dto.js';
  import {
    AudioCodec,
    CQMode,
-@@ -214,6 +214,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
+@@ -220,6 +220,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
    trash: {
      enabled: true,
      days: 10,
@@ -570,19 +561,19 @@ index 6735f82..0c222a2 100644
    theme: {
      customCss: '',
 diff --git a/web/src/routes/admin/system-settings/TrashSettings.svelte b/web/src/routes/admin/system-settings/TrashSettings.svelte
-index 6829d84..f08c776 100644
+index 3759ce9..f773cd5 100644
 --- a/web/src/routes/admin/system-settings/TrashSettings.svelte
 +++ b/web/src/routes/admin/system-settings/TrashSettings.svelte
-@@ -7,6 +7,8 @@
-   import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
+@@ -9,6 +9,8 @@
+   import { cloneDeep } from 'lodash-es';
    import { t } from 'svelte-i18n';
    import { fade } from 'svelte/transition';
 +  import SettingSelect from './SettingSelect.svelte';
 +  import { EditedUploadPrevious } from '@immich/sdk';
  
-   const disabled = $derived(featureFlagsManager.value.configFile);
-   const config = $derived(systemConfigManager.value);
-@@ -35,6 +37,20 @@
+   const query = createPreloadedQuery(getAdminConfigQuery);
+   const config = $derived(query.data);
+@@ -39,6 +41,20 @@
            isEdited={configToEdit.trash.days !== config.trash.days}
          />
  
@@ -603,3 +594,24 @@ index 6829d84..f08c776 100644
          <SettingButtonsRow bind:configToEdit keys={['trash']} {disabled} />
        </div>
      </form>
+diff --git a/web/test/common/payloads.ts b/web/test/common/payloads.ts
+index 5d9ba3d..94d40d0 100644
+--- a/web/test/common/payloads.ts
++++ b/web/test/common/payloads.ts
+@@ -3,6 +3,7 @@ import {
+   AudioCodec,
+   CQMode,
+   Colorspace,
++  EditedUploadPrevious,
+   ImageFormat,
+   LogLevel,
+   OAuthTokenEndpointAuthMethod,
+@@ -264,7 +265,7 @@ const adminConfig = (overrides: Partial<ResponseOf<'getAdminConfig'>> = {}): Res
+     missingThumbnails: true,
+     clusterNewFaces: true,
+   },
+-  trash: { enabled: true, days: 30 },
++  trash: { enabled: true, days: 30, editedUploadPrevious: EditedUploadPrevious.Stack },
+   theme: { customCss: '' },
+   library: { scan: { enabled: true, cronExpression: '0 0 * * *' }, watch: { enabled: false } },
+   server: { externalDomain: '', loginPageMessage: '', publicUsers: true },

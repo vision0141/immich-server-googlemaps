@@ -1,12 +1,11 @@
 diff --git a/server/src/dtos/config.dto.spec.ts b/server/src/dtos/config.dto.spec.ts
-index 931f100..cfa879d 100644
+index 9d2d63d..dc1922a 100644
 --- a/server/src/dtos/config.dto.spec.ts
 +++ b/server/src/dtos/config.dto.spec.ts
-@@ -66,3 +66,21 @@ describe('config visibility', () => {
-     }
+@@ -118,3 +118,20 @@ describe('passkey config', () => {
+     ).toEqual(['The passkey domain is always allowed and must not be listed as an additional domain']);
    });
  });
-+
 +
 +describe('original image preview resolution', () => {
 +  it.each([0, 1080])('should accept preview size %s', (size) => {
@@ -25,10 +24,10 @@ index 931f100..cfa879d 100644
 +  });
 +});
 diff --git a/server/src/dtos/config.dto.ts b/server/src/dtos/config.dto.ts
-index feaa271..894c245 100644
+index 8854d30..afc30a6 100644
 --- a/server/src/dtos/config.dto.ts
 +++ b/server/src/dtos/config.dto.ts
-@@ -335,7 +335,9 @@ const AdminConfigSchemaWithVisibility = z
+@@ -372,7 +372,9 @@ const AdminConfigSchemaWithVisibility = z
      image: z
        .object({
          thumbnail: AdminConfigGeneratedImageSchema,
@@ -40,10 +39,10 @@ index feaa271..894c245 100644
            .object({
              enabled: configBool.describe('Enabled').meta({ visibility: User }),
 diff --git a/server/src/services/media.service.spec.ts b/server/src/services/media.service.spec.ts
-index 950e156..95a5a4e 100644
+index c15fb26..0915a2a 100644
 --- a/server/src/services/media.service.spec.ts
 +++ b/server/src/services/media.service.spec.ts
-@@ -930,6 +930,28 @@ describe(MediaService.name, () => {
+@@ -978,6 +978,28 @@ describe(MediaService.name, () => {
        });
      });
  
@@ -73,10 +72,10 @@ index 950e156..95a5a4e 100644
        const asset = AssetFactory.from({ originalFileName: 'file.dng' })
          .exif({ fileSizeInByte: 5000, profileDescription: 'Adobe RGB', bitsPerSample: 14, orientation: undefined })
 diff --git a/server/src/services/media.service.ts b/server/src/services/media.service.ts
-index 129b99a..a9e01e2 100644
+index 3d86381..0ad9ff1 100644
 --- a/server/src/services/media.service.ts
 +++ b/server/src/services/media.service.ts
-@@ -56,6 +56,8 @@ interface UpsertFileOptions {
+@@ -57,6 +57,8 @@ interface UpsertFileOptions {
  
  type ThumbnailAsset = NonNullable<Awaited<ReturnType<AssetJobRepository['getForGenerateThumbnailJob']>>>;
  
@@ -122,21 +121,22 @@ index 129b99a..a9e01e2 100644
      );
  
      let isTransparent = false;
-@@ -319,7 +331,12 @@ export class MediaService extends BaseService {
-     const decoded = { data, info };
-     const baseOptions = { colorspace, processInvalidImages: false, edits: useEdits ? asset.edits : [] };
-     const thumbnailOptions = { ...image.thumbnail, ...baseOptions, format: thumbnailFormat };
--    const previewOptions = { ...image.preview, ...baseOptions, format: previewFormat };
+@@ -324,7 +336,13 @@ export class MediaService extends BaseService {
+       format: thumbnailFormat,
+       decodingTier: THUMBNAIL_DECODING_TIER,
+     } as const;
+-    const previewOptions = { ...image.preview, ...baseOptions, format: previewFormat, decodingTier: 0 } as const;
 +    const previewOptions = {
 +      ...image.preview,
 +      ...baseOptions,
 +      format: previewFormat,
 +      size: this.getImagePreviewTargetSize(image.preview.size),
-+    };
++      decodingTier: 0,
++    } as const;
      const promises = [
        this.mediaRepository.generateThumbhash(decoded, baseOptions),
        this.mediaRepository.generateThumbnail(decoded, thumbnailOptions, thumbnailFile.path),
-@@ -512,7 +529,10 @@ export class MediaService extends BaseService {
+@@ -520,7 +538,10 @@ export class MediaService extends BaseService {
        throw new Error(`Missing video metadata for asset ${asset.id}`);
      }
  
@@ -149,10 +149,10 @@ index 129b99a..a9e01e2 100644
      const previewOptions = previewConfig.getCommand(TranscodeTarget.Video, videoStream, undefined, format ?? undefined);
      const thumbnailOptions = thumbConfig.getCommand(TranscodeTarget.Video, videoStream, undefined, format ?? undefined);
 diff --git a/web/src/routes/admin/system-settings/ImageSettings.svelte b/web/src/routes/admin/system-settings/ImageSettings.svelte
-index d7fd86e..3187cdd 100644
+index d257a1a..aeffbac 100644
 --- a/web/src/routes/admin/system-settings/ImageSettings.svelte
 +++ b/web/src/routes/admin/system-settings/ImageSettings.svelte
-@@ -109,6 +109,7 @@
+@@ -114,6 +114,7 @@
              number
              bind:value={configToEdit.image.preview.size}
              options={[

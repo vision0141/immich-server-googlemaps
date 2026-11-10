@@ -1,22 +1,22 @@
 diff --git a/web/src/lib/components/shared-components/map/Map.svelte b/web/src/lib/components/shared-components/map/Map.svelte
-index a3fda21..aa877e1 100644
+index 1dbd8aa..503c1c0 100644
 --- a/web/src/lib/components/shared-components/map/Map.svelte
 +++ b/web/src/lib/components/shared-components/map/Map.svelte
 @@ -16,6 +16,13 @@
-   import MapSettingsModal from '$lib/modals/MapSettingsModal.svelte';
-   import { mapSettings } from '$lib/stores/preferences.store';
-   import { getAssetMediaUrl, handlePromiseError } from '$lib/utils';
+   import { getPublicConfigQuery } from '#lib/queries/config-public.query.ts';
+   import { mapSettings } from '#lib/stores/preferences.store.ts';
+   import { getAssetMediaUrl, handlePromiseError } from '#lib/utils.ts';
 +  import {
 +    acquireGoogleBasemap,
 +    isGoogleBasemapDown,
 +    onGoogleBasemapFail,
 +    releaseGoogleBasemap,
 +    type GoogleBasemap,
-+  } from '$lib/utils/google-basemap';
++  } from '#lib/utils/google-basemap.ts';
    import { getMapMarkers, type MapMarkerResponseDto } from '@immich/sdk';
-   import { Alert, Container, Icon, modalManager, Text, Theme, themeManager } from '@immich/ui';
+   import { Alert, Container, Icon, Text, Theme, modalManager, themeManager } from '@immich/ui';
    import { mdiCog, mdiImageMultiple, mdiMap, mdiMapMarker } from '@mdi/js';
-@@ -110,10 +117,36 @@
+@@ -114,8 +121,34 @@
    let marker: Marker | null = null;
    let abortController: AbortController;
  
@@ -36,9 +36,7 @@ index a3fda21..aa877e1 100644
 +  let destroyed = false;
 +
    const mapTheme = $derived($mapSettings.allowDarkMode ? themeManager.value : Theme.Light);
-   const styleUrl = $derived(
-     mapTheme === Theme.Dark ? serverConfigManager.value.mapDarkStyleUrl : serverConfigManager.value.mapLightStyleUrl,
-   );
+   const styleUrl = $derived(mapTheme === Theme.Dark ? publicConfig.map.darkStyle : publicConfig.map.lightStyle);
 +  // Googleの地図が使えない時の予備。同じoriginの /prism-maps/style.json はGoogleの画像(Map Tiles API)の地図で、その月の上限の後は
 +  // MapTilerのスタイルへ転送される(自宅環境ではCaddyがPrism Chatへ中継する)。読めない時は管理画面の地図スタイルにする
 +  let fallbackDown = $state(false);
@@ -53,14 +51,14 @@ index a3fda21..aa877e1 100644
  
    export function addClipMapMarker(lng: number, lat: number) {
      if (!map) {
-@@ -296,32 +329,126 @@
+@@ -300,32 +333,126 @@
  
    onDestroy(() => {
      abortController?.abort();
 +    destroyed = true;
 +    stopGoogle();
-   });
- 
++  });
++
 +  // MapLibreの拡大段は512pxの画像が基準で、Googleより1段小さい
 +  const syncGoogle = () => {
 +    if (map && google) {
@@ -131,6 +129,13 @@ index a3fda21..aa877e1 100644
 +    }),
 +  );
 +
++  $effect(() => {
++    if (map && googleState === 'pending') {
++      const current = map;
++      untrack(() => handlePromiseError(startGoogle(current)));
++    }
+   });
+ 
    $effect(() => {
 -    map?.setStyle(styleUrl, {
 -      transformStyle: (previousStyle, nextStyle) => {
@@ -144,13 +149,6 @@ index a3fda21..aa877e1 100644
 -          for (const [key, value] of Object.entries(previousStyle.sources || {})) {
 -            if (key.startsWith('geojson')) {
 -              sources[key] = value;
-+    if (map && googleState === 'pending') {
-+      const current = map;
-+      untrack(() => handlePromiseError(startGoogle(current)));
-+    }
-+  });
-+
-+  $effect(() => {
 +    if (map) {
 +      const current = map;
 +      current.on('error', onStyleError);
@@ -201,7 +199,7 @@ index a3fda21..aa877e1 100644
      });
    });
  
-@@ -384,8 +511,9 @@
+@@ -388,8 +515,9 @@
        event.setMaxZoom(18);
        event.on('click', handleMapClick);
        event.on('moveend', handleMoveEnd);
@@ -213,7 +211,7 @@ index a3fda21..aa877e1 100644
        }
      }}
      bind:map
-@@ -406,7 +534,9 @@
+@@ -410,7 +538,9 @@
              </Control>
            {/if}
            <ScaleControl />
@@ -224,7 +222,7 @@ index a3fda21..aa877e1 100644
          {/if}
        {/if}
  
-@@ -493,3 +623,16 @@
+@@ -497,3 +627,16 @@
      </Container>
    {/snippet}
  </svelte:boundary>

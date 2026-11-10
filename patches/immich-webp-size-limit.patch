@@ -1,8 +1,8 @@
 diff --git a/server/src/repositories/media.repository.spec.ts b/server/src/repositories/media.repository.spec.ts
-index fad6201..2dfe3ea 100644
+index 02f413b..030bdd2 100644
 --- a/server/src/repositories/media.repository.spec.ts
 +++ b/server/src/repositories/media.repository.spec.ts
-@@ -337,5 +337,46 @@ describe(MediaRepository.name, () => {
+@@ -343,5 +343,60 @@ describe(MediaRepository.name, () => {
  
        expect(statSync(file).blksize).toBeGreaterThan(0);
      });
@@ -19,7 +19,14 @@ index fad6201..2dfe3ea 100644
 +
 +      await sut.generateThumbnail(
 +        decoded,
-+        { colorspace: Colorspace.Srgb, quality: 80, format: ImageFormat.Webp, size: 2160, processInvalidImages: false },
++        {
++          colorspace: Colorspace.Srgb,
++          quality: 80,
++          format: ImageFormat.Webp,
++          size: 2160,
++          processInvalidImages: false,
++          decodingTier: 0,
++        },
 +        file,
 +      );
 +
@@ -40,7 +47,14 @@ index fad6201..2dfe3ea 100644
 +
 +      await sut.generateThumbnail(
 +        decoded,
-+        { colorspace: Colorspace.Srgb, quality: 80, format: ImageFormat.Jpeg, size: 2160, processInvalidImages: false },
++        {
++          colorspace: Colorspace.Srgb,
++          quality: 80,
++          format: ImageFormat.Jpeg,
++          size: 2160,
++          processInvalidImages: false,
++          decodingTier: 0,
++        },
 +        file,
 +      );
 +
@@ -50,10 +64,10 @@ index fad6201..2dfe3ea 100644
    });
  });
 diff --git a/server/src/repositories/media.repository.ts b/server/src/repositories/media.repository.ts
-index 9057087..45b694d 100644
+index 9f847a1..522ea47 100644
 --- a/server/src/repositories/media.repository.ts
 +++ b/server/src/repositories/media.repository.ts
-@@ -33,6 +33,7 @@ import {
+@@ -21,6 +21,7 @@ import {
    DvSignalCompatibility,
    H264Profile,
    HevcProfile,

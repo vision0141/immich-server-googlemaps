@@ -1,9 +1,9 @@
 diff --git a/server/src/services/ocr.service.spec.ts b/server/src/services/ocr.service.spec.ts
-index 9e6ff9a..b74564c 100644
+index 4ef2f61..43578ac 100644
 --- a/server/src/services/ocr.service.spec.ts
 +++ b/server/src/services/ocr.service.spec.ts
-@@ -189,6 +189,97 @@ describe(OcrService.name, () => {
-       expect(mocks.ocr.upsert).not.toHaveBeenCalled();
+@@ -211,6 +211,97 @@ describe(OcrService.name, () => {
+       });
      });
  
 +    describe('cloud OCR gateway', () => {
@@ -101,10 +101,10 @@ index 9e6ff9a..b74564c 100644
        it('should generate bigrams for Chinese text', async () => {
          const asset = AssetFactory.create();
 diff --git a/server/src/services/ocr.service.ts b/server/src/services/ocr.service.ts
-index c91524e..7f231e4 100644
+index dd004d8..7643191 100644
 --- a/server/src/services/ocr.service.ts
 +++ b/server/src/services/ocr.service.ts
-@@ -44,16 +44,65 @@ export class OcrService extends BaseService {
+@@ -43,9 +43,21 @@ export class OcrService extends BaseService {
        return JobStatus.Skipped;
      }
  
@@ -116,8 +116,7 @@ index c91524e..7f231e4 100644
 +      // Do not fall back to the local OCR. ocrAt stays empty, so the gateway queues the asset again later.
 +      return JobStatus.Failed;
 +    }
- 
--    await this.assetRepository.upsertJobStatus({ assetId: id, ocrAt: new Date() });
++
 +    if (cloud.status !== 'keep') {
 +      const ocrResults =
 +        cloud.status === 'cloud'
@@ -128,8 +127,13 @@ index c91524e..7f231e4 100644
 +      this.logger.debug(`Processed ${ocrResults.text.length} OCR result(s) for ${id}`);
 +    }
  
+     await this.assetRepository.upsertJobStatus({ assetId: id, ocrAt: new Date() });
+ 
+@@ -54,10 +66,48 @@ export class OcrService extends BaseService {
+       assetId: id,
+     });
+ 
 -    this.logger.debug(`Processed ${ocrResults.text.length} OCR result(s) for ${id}`);
-+    await this.assetRepository.upsertJobStatus({ assetId: id, ocrAt: new Date() });
      return JobStatus.Success;
    }
  
@@ -175,7 +179,7 @@ index c91524e..7f231e4 100644
    private parseOcrResults(id: string, { box, boxScore, text, textScore }: OCR) {
      const ocrDataList = [];
      const searchTokens = [];
-@@ -80,3 +129,23 @@ export class OcrService extends BaseService {
+@@ -84,3 +134,23 @@ export class OcrService extends BaseService {
      return { ocrDataList, searchText: searchTokens.join(' ') };
    }
  }

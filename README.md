@@ -20,7 +20,7 @@
 - WebUI の写真ビューアで元画像ロード後に低解像度レイヤーが残る問題は、v3 upstream 側の新しい `AdaptiveImage` 実装で解消済みのため、旧reraster patchは外しています
 - 回転メタデータ付きの縦動画が `608x1080` のように潰れる問題は、v3.3.0 upstream の `isFrameVertical` 修正で解消済みのため、旧rotated portrait scaling patchは外しています
 
-`v3.4.0` 公式ソース確認時点では、上記のうち外したpatch以外は upstream に取り込まれていないため、このカスタムビルドで維持します。
+`v3.4.1` 公式ソース確認時点では、上記のうち外したpatch以外は upstream に取り込まれていないため、このカスタムビルドで維持します。
 
 upstream への追従をしやすくするため、構成は最小差分にしています。
 
@@ -138,7 +138,7 @@ Current patches include:
 - the former WebUI photo-viewer reraster workaround is no longer applied because the v3 upstream `AdaptiveImage` implementation already addresses the stale low-resolution layer behavior
 - the former rotated portrait scaling patch is no longer applied because upstream v3.3.0 fixed it with `isFrameVertical`
 
-As of the `v3.4.0` upstream source check, only the removed patches are covered upstream. The other items are still kept in this custom build.
+As of the `v3.4.1` upstream source check, only the removed patches are covered upstream. The other items are still kept in this custom build.
 
 It is designed to stay close to upstream:
 
